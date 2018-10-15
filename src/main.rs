@@ -1,10 +1,13 @@
 extern crate libc;
 extern crate nflog;
 extern crate dns_parser;
+extern crate dnsnfset;
 use std::net::IpAddr;
 use libc::AF_INET;
 use nflog::{Queue, Message, CopyMode};
 use dns_parser::{Packet, rdata::RData};
+
+use dnsnfset::nft::NftCommand;
 
 fn callback(msg: &Message) {
     let payload = msg.get_payload();
