@@ -1,0 +1,9 @@
+[package]
+name = "dnsnfset"
+version = "0.1.0"
+authors = ["sorz <me@sorz.org>"]
+
+[dependencies]
+nflog = "0.9"
+libc = "0.2"
+dns-parser = "0.8"
