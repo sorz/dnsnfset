@@ -13,7 +13,7 @@ use nflog::{Queue, Message, CopyMode};
 use dns_parser::{Packet, rdata::RData};
 use clap::{App, Arg};
 
-use dnsnfset::nft::{NftCommand, NftFamily};
+use dnsnfset::nft::{NftCommand, NftSetElemType};
 use dnsnfset::rule::{Rule, load_rules};
 
 thread_local! {
@@ -68,9 +68,9 @@ fn handle_packet(pkt: Packet) {
 }
 
 fn add_element(nft: &mut NftCommand, rule: &Rule, name: &str, addr: &IpAddr) {
-    match (rule.family, addr) {
-        (Some(NftFamily::Ip), IpAddr::V6(_)) |
-        (Some(NftFamily::Ip6), IpAddr::V4(_)) => (),
+    match (rule.elem_type, addr) {
+        (NftSetElemType::Ipv4Addr, IpAddr::V6(_)) |
+        (NftSetElemType::Ipv6Addr, IpAddr::V4(_)) => (),
         _ => {
             info!("add {} {:?} to {}", name, addr, rule.set);
             nft.add_element(

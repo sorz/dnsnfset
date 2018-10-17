@@ -1,7 +1,7 @@
 use std::io::{BufRead, BufReader};
 use std::fs::File;
 
-use ::nft::NftFamily;
+use ::nft::{NftFamily, NftSetElemType};
 
 
 #[derive(Debug, Clone)]
@@ -10,6 +10,7 @@ pub struct Rule {
     pub family: Option<NftFamily>,
     pub table: Box<str>,
     pub set: Box<str>,
+    pub elem_type: NftSetElemType,
     pub timeout: Option<Box<str>>,
 }
 
@@ -26,8 +27,10 @@ impl Rule {
         };
         let table = cols.next().expect("table is missing");
         let set = cols.next().expect("set is missing");
+        let elem_type = cols.next().expect("set type is missing")
+            .parse().expect("type is either ipv4_addr or ipv6_addr");
         let timeout = cols.next().filter(|t| !t.is_empty());
-        Rule { domain, family, table, set, timeout }
+        Rule { domain, family, table, set, elem_type, timeout }
     }
 
     pub fn is_match(&self, domain: &str) -> bool {

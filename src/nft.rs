@@ -32,6 +32,20 @@ impl FromStr for NftFamily {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum NftSetElemType { Ipv4Addr, Ipv6Addr }
+impl FromStr for NftSetElemType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "ipv4_addr" | "ipv4" | "ip4" => Ok(NftSetElemType::Ipv4Addr),
+            "ipv6_addr" | "ipv6" | "ip6" => Ok(NftSetElemType::Ipv6Addr),
+            _ => Err(()),
+        }
+    }
+}
+
+
 impl NftCommand {
     pub fn new() -> Self {
         NftCommand {
