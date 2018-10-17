@@ -3,11 +3,17 @@ extern crate nflog;
 extern crate dns_parser;
 extern crate dnsnfset;
 use std::net::IpAddr;
+use std::cell::RefCell;
 use libc::AF_INET;
 use nflog::{Queue, Message, CopyMode};
 use dns_parser::{Packet, rdata::RData};
 
-use dnsnfset::nft::NftCommand;
+use dnsnfset::nft::{NftCommand, NftFamily};
+use dnsnfset::rule::{Rule, load_rules};
+
+thread_local! {
+    static RULES: RefCell<Vec<Rule>> = RefCell::default();
+}
 
 fn callback(msg: &Message) {
     let payload = msg.get_payload();
@@ -28,29 +34,52 @@ fn callback(msg: &Message) {
 fn handle_packet(pkt: Packet) {
     let records = pkt.answers.iter().filter_map(|record| {
         match record.data {
-            RData::A(addr) => Some((record.name.to_string(), IpAddr::V4(addr.0))),
-            RData::AAAA(addr) => Some((record.name.to_string(), IpAddr::V6(addr.0))),
+            RData::A(addr) =>
+                Some((record.name.to_string(), IpAddr::V4(addr.0))),
+            RData::AAAA(addr) =>
+                Some((record.name.to_string(), IpAddr::V6(addr.0))),
             _ => None,
         }
     });
-    let vec: Vec<_> = records.collect();
 
-    println!("answers: {:?}", vec);
+    let mut nft = NftCommand::new();
+    RULES.with(|rules| {
+        let rules = rules.borrow();
+        for (name, addr) in records {
+            for rule in rules.iter() {
+                if rule.is_match(&name) {
+                    add_element(&mut nft, rule, &name, &addr);
+                }
+            }
+        }
+    });
+    if !nft.is_empty() {
+        println!("{}", nft.cmd);
+        let result = nft.execute().expect("fail to run nft");
+        if !result.success() {
+            println!("nft return error: {:?}", result.code());
+        }
+    }
 }
 
-fn suffix_match(domain: &str, suffix: &str) -> bool {
-    if suffix.is_empty() {
-        return true;
+fn add_element(nft: &mut NftCommand, rule: &Rule, name: &str, addr: &IpAddr) {
+    match (rule.family, addr) {
+        (Some(NftFamily::Ip), IpAddr::V6(_)) |
+        (Some(NftFamily::Ip6), IpAddr::V4(_)) => (),
+        _ => {
+            println!("add {} {:?} to {}", name, addr, rule.set);
+            nft.add_element(
+                rule.family, &rule.table, &rule.set,
+                addr, &rule.timeout,
+            );
+        }
     }
-    let mut domain = domain.split('.').rev();
-    suffix.split('.').rev()
-        .skip_while(|s| match domain.next() {
-            Some(ss) => ss.eq_ignore_ascii_case(s),
-            None => false,
-        }).next() == None
 }
 
 fn main() {
+    let rules = load_rules("rules.conf");
+    RULES.with(|r| r.borrow_mut().extend(rules.into_iter()));
+
     let mut queue = Queue::new();
     queue.open();
     let rc = queue.bind(AF_INET);
@@ -64,11 +93,3 @@ fn main() {
     queue.close();
 }
 
-#[test]
-fn test_suffix_match() {
-    assert_eq!(true, suffix_match("example.com", ""));
-    assert_eq!(true, suffix_match("example.com", "com"));
-    assert_eq!(true, suffix_match("eXaMpLe.cOm", "example.com"));
-    assert_eq!(false, suffix_match("example.com", "other.example.com"));
-    assert_eq!(false, suffix_match("examp1e.com", "example.com"));
-}

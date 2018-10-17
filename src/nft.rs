@@ -6,9 +6,10 @@ use std::str::FromStr;
 use std::process::{Command, ExitStatus};
 
 pub struct NftCommand {
-    cmd: String,
+    pub cmd: String,
 }
 
+#[derive(Clone, Copy, Debug)]
 pub enum NftFamily { Ip, Ip6, Inet }
 impl Display for NftFamily {
     fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::Error> {
@@ -39,7 +40,7 @@ impl NftCommand {
     }
 
     pub fn add_element(&mut self, family: Option<NftFamily>, table: &str,
-                       set: &str, addr: IpAddr, timeout: Option<&str>) {
+                       set: &str, addr: &IpAddr, timeout: &Option<Box<str>>) {
         self.cmd += "add element ";
         if let Some(family) = family {
             write!(self.cmd, "{} ", family).unwrap();
@@ -55,6 +56,10 @@ impl NftCommand {
         Command::new("nft")
             .arg(self.cmd)
             .status()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.cmd.is_empty()
     }
 }
 

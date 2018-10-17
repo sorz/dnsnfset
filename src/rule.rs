@@ -4,7 +4,7 @@ use std::fs::File;
 use ::nft::NftFamily;
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Rule {
     pub domain: Box<str>,
     pub family: Option<NftFamily>,
@@ -30,7 +30,7 @@ impl Rule {
         Rule { domain, family, table, set, timeout }
     }
 
-    fn is_match(&self, domain: &str) -> bool {
+    pub fn is_match(&self, domain: &str) -> bool {
         suffix_match(domain, &self.domain)
     }
 }
