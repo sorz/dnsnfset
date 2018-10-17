@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate log;
+extern crate env_logger;
 extern crate libc;
 extern crate nflog;
 extern crate dns_parser;
@@ -18,15 +21,15 @@ thread_local! {
 fn callback(msg: &Message) {
     let payload = msg.get_payload();
     if payload.len() < 20 + 8 {
-        println!("packet too short, ignored");
+        warn!("packet too short, ignored");
         return;
     }
     if payload[0] != 0x45 {
-        println!("not ip4 packet, ignored");
+        warn!("not ip4 packet, ignored");
         return;
     }
     match Packet::parse(&payload[28..]) {
-        Err(err) => println!("fail to parse packet: {}", err),
+        Err(err) => warn!("fail to parse packet: {}", err),
         Ok(packet) => handle_packet(packet),
     }
 }
@@ -54,10 +57,10 @@ fn handle_packet(pkt: Packet) {
         }
     });
     if !nft.is_empty() {
-        println!("{}", nft.cmd);
+        debug!("{}", nft.cmd);
         let result = nft.execute().expect("fail to run nft");
         if !result.success() {
-            println!("nft return error: {:?}", result.code());
+            warn!("nft return error: {:?}", result.code());
         }
     }
 }
@@ -67,7 +70,7 @@ fn add_element(nft: &mut NftCommand, rule: &Rule, name: &str, addr: &IpAddr) {
         (Some(NftFamily::Ip), IpAddr::V6(_)) |
         (Some(NftFamily::Ip6), IpAddr::V4(_)) => (),
         _ => {
-            println!("add {} {:?} to {}", name, addr, rule.set);
+            info!("add {} {:?} to {}", name, addr, rule.set);
             nft.add_element(
                 rule.family, &rule.table, &rule.set,
                 addr, &rule.timeout,

@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["sorz <me@sorz.org>"]
 
 [dependencies]
-nflog = "0.9"
 libc = "0.2"
 dns-parser = "0.8"
+log = "0.4"
+env_logger = "0.5"
+
+[dependencies.nflog]
+git = "https://github.com/sorz/nflog-rs"
