@@ -5,11 +5,13 @@ extern crate libc;
 extern crate nflog;
 extern crate dns_parser;
 extern crate dnsnfset;
+extern crate clap;
 use std::net::IpAddr;
 use std::cell::RefCell;
 use libc::AF_INET;
 use nflog::{Queue, Message, CopyMode};
 use dns_parser::{Packet, rdata::RData};
+use clap::{App, Arg};
 
 use dnsnfset::nft::{NftCommand, NftFamily};
 use dnsnfset::rule::{Rule, load_rules};
@@ -81,7 +83,30 @@ fn add_element(nft: &mut NftCommand, rule: &Rule, name: &str, addr: &IpAddr) {
 
 fn main() {
     env_logger::init();
-    let rules = load_rules("rules.conf");
+    let matches = App::new("dnsnfset")
+        .version(env!("CARGO_PKG_VERSION"))
+        .author("Shell Chen <me@sorz.org>")
+        .about("Add IPs in DNS response to nftables sets")
+        .arg(Arg::with_name("group")
+             .long("group")
+             .short("n")
+             .help("NFLOG group to bind on")
+             .takes_value(true)
+             .default_value("0"))
+        .arg(Arg::with_name("rules")
+             .long("rules")
+             .short("f")
+             .help("Rules file")
+             .takes_value(true)
+             .default_value("rules.conf"))
+        .get_matches();
+    let group = matches.value_of("group")
+        .expect("missing NFLOG group")
+        .parse().expect("group must be a natural number");
+    let file = matches.value_of("rules")
+        .expect("missing rules file path");
+
+    let rules = load_rules(file);
     info!("{} rules loaded", rules.len());
     RULES.with(|r| r.borrow_mut().extend(rules.into_iter()));
 
@@ -91,10 +116,10 @@ fn main() {
     if rc != 0 {
         panic!("fail to bind nfqueue");
     }
-    queue.bind_group(1);
+    queue.bind_group(group);
     queue.set_mode(CopyMode::CopyPacket, 0xffff);
     queue.set_callback(callback);
-    info!("starting loop");
+    info!("listen on queue {}", group);
     queue.run_loop();
     info!("exit");
     queue.close();

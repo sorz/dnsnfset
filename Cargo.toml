@@ -8,6 +8,7 @@ libc = "0.2"
 dns-parser = "0.8"
 log = "0.4"
 env_logger = "0.5"
+clap = "2.32"
 
 [dependencies.nflog]
 git = "https://github.com/sorz/nflog-rs"
