@@ -80,7 +80,9 @@ fn add_element(nft: &mut NftCommand, rule: &Rule, name: &str, addr: &IpAddr) {
 }
 
 fn main() {
+    env_logger::init();
     let rules = load_rules("rules.conf");
+    info!("{} rules loaded", rules.len());
     RULES.with(|r| r.borrow_mut().extend(rules.into_iter()));
 
     let mut queue = Queue::new();
@@ -92,7 +94,9 @@ fn main() {
     queue.bind_group(1);
     queue.set_mode(CopyMode::CopyPacket, 0xffff);
     queue.set_callback(callback);
+    info!("starting loop");
     queue.run_loop();
+    info!("exit");
     queue.close();
 }
 
