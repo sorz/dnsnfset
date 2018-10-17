@@ -1,0 +1,22 @@
+[Unit]
+Description=Add IP addresses in DNS replies into nftables sets
+After=network.target
+
+[Service]
+Type=simple
+User=nobody
+Group=nobody
+Environment=RUST_LOG=dnsnfset
+ExecStart=/opt/dnsnfset/dnsnfset -n 0 -f rules.conf
+WorkingDirectory=/opt/dnsnfset
+Restart=on-failure
+
+AmbientCapabilities=CAP_NET_ADMIN
+PrivateDevices=true
+ProtectSystem=strict 
+ProtectHome=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target
+
