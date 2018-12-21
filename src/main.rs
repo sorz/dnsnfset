@@ -1,11 +1,5 @@
-#[macro_use]
-extern crate log;
-extern crate env_logger;
-extern crate libc;
-extern crate nflog;
-extern crate dns_parser;
-extern crate dnsnfset;
-extern crate clap;
+use env_logger;
+use log::{debug, info, warn};
 use std::net::IpAddr;
 use std::cell::RefCell;
 use libc::AF_INET;

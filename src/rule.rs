@@ -1,7 +1,7 @@
 use std::io::{BufRead, BufReader};
 use std::fs::File;
 
-use ::nft::{NftFamily, NftSetElemType};
+use crate::nft::{NftFamily, NftSetElemType};
 
 
 #[derive(Debug, Clone)]
