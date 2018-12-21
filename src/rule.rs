@@ -1,8 +1,7 @@
-use std::io::{BufRead, BufReader};
 use std::fs::File;
+use std::io::{BufRead, BufReader};
 
 use crate::nft::{NftFamily, NftSetElemType};
-
 
 #[derive(Debug, Clone)]
 pub struct Rule {
@@ -16,8 +15,7 @@ pub struct Rule {
 
 impl Rule {
     fn from_str(s: &str) -> Self {
-        let mut cols = s.split(",")
-            .map(|s| s.trim().to_string().into_boxed_str());
+        let mut cols = s.split(",").map(|s| s.trim().to_string().into_boxed_str());
         let domain = cols.next().expect("domain is missing");
         let family = cols.next().expect("family is missing");
         let family = if family.is_empty() {
@@ -27,10 +25,20 @@ impl Rule {
         };
         let table = cols.next().expect("table is missing");
         let set = cols.next().expect("set is missing");
-        let elem_type = cols.next().expect("set type is missing")
-            .parse().expect("type is either ipv4_addr or ipv6_addr");
+        let elem_type = cols
+            .next()
+            .expect("set type is missing")
+            .parse()
+            .expect("type is either ipv4_addr or ipv6_addr");
         let timeout = cols.next().filter(|t| !t.is_empty());
-        Rule { domain, family, table, set, elem_type, timeout }
+        Rule {
+            domain,
+            family,
+            table,
+            set,
+            elem_type,
+            timeout,
+        }
     }
 
     pub fn is_match(&self, domain: &str) -> bool {
@@ -39,21 +47,19 @@ impl Rule {
 }
 
 pub fn load_rules(path: &str) -> Vec<Rule> {
-    let file = File::open(path)
-        .expect("fail to open file");
+    let file = File::open(path).expect("fail to open file");
     BufReader::new(file)
         .lines()
         .filter_map(|line| {
             let line = line.expect("fail to read");
             let line = line.trim();
-            if line.starts_with("#")
-                    || line.starts_with("//")
-                    || line.is_empty() {
+            if line.starts_with("#") || line.starts_with("//") || line.is_empty() {
                 None
             } else {
                 Some(Rule::from_str(line))
             }
-        }).collect()
+        })
+        .collect()
 }
 
 fn suffix_match(domain: &str, suffix: &str) -> bool {
@@ -61,11 +67,15 @@ fn suffix_match(domain: &str, suffix: &str) -> bool {
         return true;
     }
     let mut domain = domain.split('.').rev();
-    suffix.split('.').rev()
+    suffix
+        .split('.')
+        .rev()
         .skip_while(|s| match domain.next() {
             Some(ss) => ss.eq_ignore_ascii_case(s),
             None => false,
-        }).next() == None
+        })
+        .next()
+        == None
 }
 
 #[test]

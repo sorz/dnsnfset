@@ -1,14 +1,14 @@
-use env_logger;
-use log::{debug, info, warn};
-use std::net::IpAddr;
-use std::cell::RefCell;
-use libc::AF_INET;
-use nflog::{Queue, Message, CopyMode};
-use dns_parser::{Packet, rdata::RData, QueryType};
 use clap::{App, Arg};
+use dns_parser::{rdata::RData, Packet, QueryType};
+use env_logger;
+use libc::AF_INET;
+use log::{debug, info, warn};
+use nflog::{CopyMode, Message, Queue};
+use std::cell::RefCell;
+use std::net::IpAddr;
 
 use dnsnfset::nft::{NftCommand, NftSetElemType};
-use dnsnfset::rule::{Rule, load_rules};
+use dnsnfset::rule::{load_rules, Rule};
 
 thread_local! {
     static RULES: RefCell<Vec<Rule>> = RefCell::default();
@@ -31,28 +31,30 @@ fn callback(msg: &Message) {
 }
 
 fn handle_packet(pkt: Packet) {
-    let name = pkt.questions.iter().find(|question| {
-        match question.qtype {
+    let name = pkt
+        .questions
+        .iter()
+        .find(|question| match question.qtype {
             QueryType::A | QueryType::AAAA => true,
             _ => false,
-        }
-    }).map(|question| question.qname.to_string());
+        })
+        .map(|question| question.qname.to_string());
 
     if let Some(name) = name {
-
-        let records: Vec<_> = pkt.answers.iter().filter_map(|record| {
-            match record.data {
+        let records: Vec<_> = pkt
+            .answers
+            .iter()
+            .filter_map(|record| match record.data {
                 RData::A(addr) => Some(IpAddr::V4(addr.0)),
                 RData::AAAA(addr) => Some(IpAddr::V6(addr.0)),
                 _ => None,
-            }
-        }).collect();  // TODO: avoid allocate before match rule
+            })
+            .collect(); // TODO: avoid allocate before match rule
 
         let mut nft = NftCommand::new();
         RULES.with(|rules| {
             let ruleset = rules.borrow();
-            let rules = ruleset.iter()
-                .filter(|rule| rule.is_match(&name));
+            let rules = ruleset.iter().filter(|rule| rule.is_match(&name));
             for rule in rules {
                 for addr in records.iter() {
                     add_element(&mut nft, rule, &name, &addr);
@@ -71,14 +73,10 @@ fn handle_packet(pkt: Packet) {
 
 fn add_element(nft: &mut NftCommand, rule: &Rule, name: &str, addr: &IpAddr) {
     match (rule.elem_type, addr) {
-        (NftSetElemType::Ipv4Addr, IpAddr::V6(_)) |
-        (NftSetElemType::Ipv6Addr, IpAddr::V4(_)) => (),
+        (NftSetElemType::Ipv4Addr, IpAddr::V6(_)) | (NftSetElemType::Ipv6Addr, IpAddr::V4(_)) => (),
         _ => {
             info!("add {} {:?} to {}", name, addr, rule.set);
-            nft.add_element(
-                rule.family, &rule.table, &rule.set,
-                addr, &rule.timeout,
-            );
+            nft.add_element(rule.family, &rule.table, &rule.set, addr, &rule.timeout);
         }
     }
 }
@@ -89,24 +87,29 @@ fn main() {
         .version(env!("CARGO_PKG_VERSION"))
         .author("Shell Chen <me@sorz.org>")
         .about("Add IPs in DNS response to nftables sets")
-        .arg(Arg::with_name("group")
-             .long("group")
-             .short("n")
-             .help("NFLOG group to bind on")
-             .takes_value(true)
-             .default_value("0"))
-        .arg(Arg::with_name("rules")
-             .long("rules")
-             .short("f")
-             .help("Rules file")
-             .takes_value(true)
-             .default_value("rules.conf"))
+        .arg(
+            Arg::with_name("group")
+                .long("group")
+                .short("n")
+                .help("NFLOG group to bind on")
+                .takes_value(true)
+                .default_value("0"),
+        )
+        .arg(
+            Arg::with_name("rules")
+                .long("rules")
+                .short("f")
+                .help("Rules file")
+                .takes_value(true)
+                .default_value("rules.conf"),
+        )
         .get_matches();
-    let group = matches.value_of("group")
+    let group = matches
+        .value_of("group")
         .expect("missing NFLOG group")
-        .parse().expect("group must be a natural number");
-    let file = matches.value_of("rules")
-        .expect("missing rules file path");
+        .parse()
+        .expect("group must be a natural number");
+    let file = matches.value_of("rules").expect("missing rules file path");
 
     let rules = load_rules(file);
     info!("{} rules loaded", rules.len());
@@ -126,4 +129,3 @@ fn main() {
     info!("exit");
     queue.close();
 }
-

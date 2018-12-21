@@ -1,16 +1,20 @@
+use std::fmt::Write;
+use std::fmt::{self, Display, Formatter};
 use std::io;
 use std::net::IpAddr;
-use std::fmt::{self, Display, Formatter};
-use std::fmt::Write;
-use std::str::FromStr;
 use std::process::{Command, ExitStatus};
+use std::str::FromStr;
 
 pub struct NftCommand {
     pub cmd: String,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum NftFamily { Ip, Ip6, Inet }
+pub enum NftFamily {
+    Ip,
+    Ip6,
+    Inet,
+}
 impl Display for NftFamily {
     fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::Error> {
         match self {
@@ -33,7 +37,10 @@ impl FromStr for NftFamily {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum NftSetElemType { Ipv4Addr, Ipv6Addr }
+pub enum NftSetElemType {
+    Ipv4Addr,
+    Ipv6Addr,
+}
 impl FromStr for NftSetElemType {
     type Err = ();
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -45,16 +52,19 @@ impl FromStr for NftSetElemType {
     }
 }
 
-
 impl NftCommand {
     pub fn new() -> Self {
-        NftCommand {
-            cmd: String::new(),
-        }
+        NftCommand { cmd: String::new() }
     }
 
-    pub fn add_element(&mut self, family: Option<NftFamily>, table: &str,
-                       set: &str, addr: &IpAddr, timeout: &Option<Box<str>>) {
+    pub fn add_element(
+        &mut self,
+        family: Option<NftFamily>,
+        table: &str,
+        set: &str,
+        addr: &IpAddr,
+        timeout: &Option<Box<str>>,
+    ) {
         self.cmd += "add element ";
         if let Some(family) = family {
             write!(self.cmd, "{} ", family).unwrap();
@@ -67,9 +77,7 @@ impl NftCommand {
     }
 
     pub fn execute(self) -> Result<ExitStatus, io::Error> {
-        Command::new("nft")
-            .arg(self.cmd)
-            .status()
+        Command::new("nft").arg(self.cmd).status()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -87,6 +95,9 @@ fn test_add_element() {
 
     let inet = "inet".parse().unwrap();
     nft.add_element(Some(inet), "nat", "test", ip6, Some("1h4s"));
-    assert_eq!("add element filter test { 127.0.0.1 }; \
-                add element inet nat test { ::1 timeout 1h4s }; ", nft.cmd);
+    assert_eq!(
+        "add element filter test { 127.0.0.1 }; \
+         add element inet nat test { ::1 timeout 1h4s }; ",
+        nft.cmd
+    );
 }
