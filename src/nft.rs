@@ -59,9 +59,9 @@ impl NftCommand {
         if let Some(family) = family {
             write!(self.cmd, "{} ", family).unwrap();
         }
-        write!(self.cmd, "{} {} {{ {} ", table, set, addr);
+        write!(self.cmd, "{} {} {{ {} ", table, set, addr).unwrap();
         if let Some(timeout) = timeout {
-            write!(self.cmd, "timeout {} ", timeout);
+            write!(self.cmd, "timeout {} ", timeout).unwrap();
         }
         self.cmd += "}; ";
     }

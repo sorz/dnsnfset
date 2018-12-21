@@ -10,7 +10,7 @@ use std::net::IpAddr;
 use std::cell::RefCell;
 use libc::AF_INET;
 use nflog::{Queue, Message, CopyMode};
-use dns_parser::{Packet, rdata::RData};
+use dns_parser::{Packet, rdata::RData, QueryType};
 use clap::{App, Arg};
 
 use dnsnfset::nft::{NftCommand, NftSetElemType};
@@ -37,32 +37,40 @@ fn callback(msg: &Message) {
 }
 
 fn handle_packet(pkt: Packet) {
-    let records = pkt.answers.iter().filter_map(|record| {
-        match record.data {
-            RData::A(addr) =>
-                Some((record.name.to_string(), IpAddr::V4(addr.0))),
-            RData::AAAA(addr) =>
-                Some((record.name.to_string(), IpAddr::V6(addr.0))),
-            _ => None,
+    let name = pkt.questions.iter().find(|question| {
+        match question.qtype {
+            QueryType::A | QueryType::AAAA => true,
+            _ => false,
         }
-    });
+    }).map(|question| question.qname.to_string());
 
-    let mut nft = NftCommand::new();
-    RULES.with(|rules| {
-        let rules = rules.borrow();
-        for (name, addr) in records {
-            for rule in rules.iter() {
-                if rule.is_match(&name) {
+    if let Some(name) = name {
+
+        let records: Vec<_> = pkt.answers.iter().filter_map(|record| {
+            match record.data {
+                RData::A(addr) => Some(IpAddr::V4(addr.0)),
+                RData::AAAA(addr) => Some(IpAddr::V6(addr.0)),
+                _ => None,
+            }
+        }).collect();  // TODO: avoid allocate before match rule
+
+        let mut nft = NftCommand::new();
+        RULES.with(|rules| {
+            let ruleset = rules.borrow();
+            let rules = ruleset.iter()
+                .filter(|rule| rule.is_match(&name));
+            for rule in rules {
+                for addr in records.iter() {
                     add_element(&mut nft, rule, &name, &addr);
                 }
             }
-        }
-    });
-    if !nft.is_empty() {
-        debug!("{}", nft.cmd);
-        let result = nft.execute().expect("fail to run nft");
-        if !result.success() {
-            warn!("nft return error: {:?}", result.code());
+        });
+        if !nft.is_empty() {
+            debug!("{}", nft.cmd);
+            let result = nft.execute().expect("fail to run nft");
+            if !result.success() {
+                warn!("nft return error: {:?}", result.code());
+            }
         }
     }
 }
