@@ -62,6 +62,7 @@ fn handle_packet(pkt: Packet) {
             }
         });
         if !nft.is_empty() {
+            info!("{} matched", name);
             debug!("{}", nft.cmd);
             let result = nft.execute().expect("fail to run nft");
             if !result.success() {
@@ -75,7 +76,7 @@ fn add_element(nft: &mut NftCommand, rule: &Rule, name: &str, addr: &IpAddr) {
     match (rule.elem_type, addr) {
         (NftSetElemType::Ipv4Addr, IpAddr::V6(_)) | (NftSetElemType::Ipv6Addr, IpAddr::V4(_)) => (),
         _ => {
-            info!("add {} {:?} to {}", name, addr, rule.set);
+            debug!("add {} {:?} to {}", name, addr, rule.set);
             nft.add_element(rule.family, &rule.table, &rule.set, addr, &rule.timeout);
         }
     }
