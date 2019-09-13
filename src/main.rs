@@ -20,11 +20,12 @@ fn callback(msg: &Message) {
         warn!("packet too short, ignored");
         return;
     }
-    if payload[0] != 0x45 {
-        warn!("not ip4 packet, ignored");
-        return;
-    }
-    match Packet::parse(&payload[28..]) {
+    let dns = match payload[0] {
+        0x45 => &payload[20 + 8..],
+        0x60 => &payload[40 + 8..],
+        _ => return warn!("not ip packet, ignored"),
+    };
+    match Packet::parse(dns) {
         Err(err) => warn!("fail to parse packet: {}", err),
         Ok(packet) => handle_packet(packet),
     }
