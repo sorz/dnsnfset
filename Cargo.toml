@@ -10,6 +10,11 @@ dns-parser = "0.8"
 log = "0.4"
 env_logger = "0.5"
 clap = "2.32"
+mnl = "0.1.0"
 
 [dependencies.nflog]
 git = "https://github.com/sorz/nflog-rs"
+
+[build-dependencies]
+bindgen = "0.45"
+

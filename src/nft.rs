@@ -85,19 +85,3 @@ impl NftCommand {
     }
 }
 
-#[test]
-fn test_add_element() {
-    let mut nft = NftCommand::new();
-    let ip4 = "127.0.0.1".parse().unwrap();
-    let ip6 = "::1".parse().unwrap();
-    nft.add_element(None, "filter", "test", ip4, None);
-    assert_eq!("add element filter test { 127.0.0.1 }; ", nft.cmd);
-
-    let inet = "inet".parse().unwrap();
-    nft.add_element(Some(inet), "nat", "test", ip6, Some("1h4s"));
-    assert_eq!(
-        "add element filter test { 127.0.0.1 }; \
-         add element inet nat test { ::1 timeout 1h4s }; ",
-        nft.cmd
-    );
-}
