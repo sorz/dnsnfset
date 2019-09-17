@@ -6,7 +6,7 @@ Add IP addresses from DNS replies into nftables' sets.
 
 
 ## Build
-Install Rust toolchain ([rustup.rs](https://rustup.rs)).
+Install Rust toolchain ([rustup.rs](https://rustup.rs)). Then,
 
 ```bash
 git clone https://github.com/sorz/dnsnfset
@@ -22,6 +22,6 @@ target/release/dnsnfset --help
 4. Run `dnsnfset --group <N> --rules <FILE>`.
 
 ## Future works
-1. Use `libnetfilter_log` rather than executing `nft` to insert element.
-2. Handle CNAME properly.
-3. Constant-time rules matching.
+1. Handle CNAME properly.
+2. Constant-time rules matching.
+

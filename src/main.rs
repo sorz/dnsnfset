@@ -6,13 +6,16 @@ use log::{debug, info, warn};
 use nflog::{CopyMode, Message, Queue};
 use std::cell::RefCell;
 use std::net::IpAddr;
+use std::time::Instant;
 use etherparse::{SlicedPacket, TransportSlice};
 
 use dnsnfset::nft::{NftCommand, NftSetElemType};
 use dnsnfset::rule::{load_rules, Rule};
+use dnsnfset::nftables::Nftables;
 
 thread_local! {
     static RULES: RefCell<Vec<Rule>> = RefCell::default();
+    static NFT: RefCell<Option<Nftables>> = RefCell::default();
 }
 
 fn callback(msg: &Message) {
@@ -52,23 +55,29 @@ fn handle_packet(pkt: Packet) {
             })
             .collect(); // TODO: avoid allocate before match rule
 
-        let mut nft = NftCommand::new();
+        let mut cmds = NftCommand::new();
         RULES.with(|rules| {
             let ruleset = rules.borrow();
             let rules = ruleset.iter().filter(|rule| rule.is_match(&name));
             for rule in rules {
                 for addr in records.iter() {
-                    add_element(&mut nft, rule, &name, &addr);
+                    add_element(&mut cmds, rule, &name, &addr);
                 }
             }
         });
-        if !nft.is_empty() {
+        if !cmds.is_empty() {
             info!("{} matched", name);
-            debug!("{}", nft.cmd);
-            let result = nft.execute().expect("fail to run nft");
-            if !result.success() {
-                warn!("nft return error: {:?}", result.code());
+            debug!("{}", cmds.cmd);
+            let t = Instant::now();
+            let result = NFT.with(|opt| {
+                let mut opt = opt.borrow_mut();
+                let nft = opt.get_or_insert_with(|| Nftables::new());
+                nft.run(cmds.cmd)
+            });
+            if result.is_err() {
+                warn!("fail to run nft cmd");
             }
+            debug!("{:?}", t.elapsed());
         }
     }
 }

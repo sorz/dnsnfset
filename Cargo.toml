@@ -17,5 +17,5 @@ etherparse = "0.8"
 git = "https://github.com/sorz/nflog-rs"
 
 [build-dependencies]
-bindgen = "0.45"
+bindgen = "0.51"
 
