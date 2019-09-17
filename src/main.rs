@@ -84,7 +84,9 @@ fn add_element(nft: &mut NftCommand, rule: &Rule, name: &str, addr: &IpAddr) {
 }
 
 fn main() {
-    env_logger::init();
+    env_logger::builder()
+        .default_format_timestamp(false)
+        .init();
     let matches = App::new("dnsnfset")
         .version(env!("CARGO_PKG_VERSION"))
         .author("Shell Chen <me@sorz.org>")
