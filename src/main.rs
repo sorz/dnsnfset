@@ -6,6 +6,7 @@ use log::{debug, info, warn};
 use nflog::{CopyMode, Message, Queue};
 use std::cell::RefCell;
 use std::net::IpAddr;
+use etherparse::{SlicedPacket, TransportSlice};
 
 use dnsnfset::nft::{NftCommand, NftSetElemType};
 use dnsnfset::rule::{load_rules, Rule};
@@ -15,17 +16,16 @@ thread_local! {
 }
 
 fn callback(msg: &Message) {
-    let payload = msg.get_payload();
-    if payload.len() < 20 + 8 {
-        warn!("packet too short, ignored");
-        return;
-    }
-    let dns = match payload[0] {
-        0x45 => &payload[20 + 8..],
-        0x60 => &payload[40 + 8..],
-        _ => return warn!("not ip packet, ignored"),
+    let ip = msg.get_payload();
+    let payload = match SlicedPacket::from_ip(&ip) {
+        Err(err) => return warn!("fail to parse ip packet: {:?}", err),
+        Ok(packet) => match packet.transport {
+            None => return warn!("missing tranposrt-layer packet"),
+            Some(TransportSlice::Tcp(_)) => return warn!("tcp segment found"),
+            Some(TransportSlice::Udp(_)) => packet.payload,
+        }
     };
-    match Packet::parse(dns) {
+    match Packet::parse(payload) {
         Err(err) => warn!("fail to parse packet: {}", err),
         Ok(packet) => handle_packet(packet),
     }

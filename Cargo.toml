@@ -8,9 +8,10 @@ edition = "2018"
 libc = "0.2"
 dns-parser = "0.8"
 log = "0.4"
-env_logger = "0.5"
-clap = "2.32"
+env_logger = "0.6"
+clap = "2.33"
 mnl = "0.1.0"
+etherparse = "0.8"
 
 [dependencies.nflog]
 git = "https://github.com/sorz/nflog-rs"
