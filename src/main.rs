@@ -10,11 +10,11 @@ use std::time::Instant;
 use etherparse::{SlicedPacket, TransportSlice};
 
 use dnsnfset::nft::{NftCommand, NftSetElemType};
-use dnsnfset::rule::{load_rules, Rule};
+use dnsnfset::rule::{RuleSet, Set};
 use dnsnfset::nftables::Nftables;
 
 thread_local! {
-    static RULES: RefCell<Vec<Rule>> = RefCell::default();
+    static RULES: RefCell<Option<RuleSet>> = RefCell::default();
     static NFT: RefCell<Option<Nftables>> = RefCell::default();
 }
 
@@ -45,6 +45,12 @@ fn handle_packet(pkt: Packet) {
         .map(|question| question.qname.to_string());
 
     if let Some(name) = name {
+        let sets = RULES.with(|ruleset| {
+            ruleset.borrow().as_ref().expect("uninitialised ruleset").match_all(&name)
+        });
+        if sets.is_empty() {
+            return;
+        }
         let records: Vec<_> = pkt
             .answers
             .iter()
@@ -53,41 +59,39 @@ fn handle_packet(pkt: Packet) {
                 RData::AAAA(addr) => Some(IpAddr::V6(addr.0)),
                 _ => None,
             })
-            .collect(); // TODO: avoid allocate before match rule
+            .collect();
 
         let mut cmd = String::new();
-        RULES.with(|rules| {
-            let ruleset = rules.borrow();
-            let rules = ruleset.iter().filter(|rule| rule.is_match(&name));
-            for rule in rules {
-                for addr in records.iter() {
-                    add_element(&mut cmd, rule, &name, &addr);
-                }
+        for set in sets {
+            for addr in records.iter() {
+                add_element(&mut cmd, &set, &name, &addr);
             }
-        });
-        if !cmd.is_empty() {
-            info!("{} matched", name);
-            trace!("{}", cmd);
-            let t = Instant::now();
-            let result = NFT.with(|opt| {
-                let mut opt = opt.borrow_mut();
-                let nft = opt.get_or_insert_with(|| Nftables::new());
-                nft.run(cmd)
-            });
-            if result.is_err() {
-                warn!("fail to run nft cmd");
-            }
-            debug!("{:?}", t.elapsed());
         }
+        if cmd.is_empty() {
+            return;
+        }
+
+        info!("{} matched", name);
+        trace!("{}", cmd);
+        let t = Instant::now();
+        let result = NFT.with(|opt| {
+            let mut opt = opt.borrow_mut();
+            let nft = opt.get_or_insert_with(|| Nftables::new());
+            nft.run(cmd)
+        });
+        if result.is_err() {
+            warn!("fail to run nft cmd");
+        }
+        debug!("{:?}", t.elapsed());
     }
 }
 
-fn add_element(buf: &mut String, rule: &Rule, name: &str, addr: &IpAddr) {
-    match (rule.elem_type, addr) {
+fn add_element(buf: &mut String, set: &Set, name: &str, addr: &IpAddr) {
+    match (set.elem_type, addr) {
         (NftSetElemType::Ipv4Addr, IpAddr::V6(_)) | (NftSetElemType::Ipv6Addr, IpAddr::V4(_)) => (),
         _ => {
-            debug!("add {} {:?} to {}", name, addr, rule.set);
-            buf.add_element(rule.family, &rule.table, &rule.set, addr, &rule.timeout);
+            debug!("add {} {:?} to {}", name, addr, set.set_name);
+            buf.add_element(set.family, &set.table, &set.set_name, addr, &set.timeout);
         }
     }
 }
@@ -124,9 +128,9 @@ fn main() {
         .expect("group must be a natural number");
     let file = matches.value_of("rules").expect("missing rules file path");
 
-    let rules = load_rules(file);
-    info!("{} rules loaded", rules.len());
-    RULES.with(|r| r.borrow_mut().extend(rules.into_iter()));
+    let ruleset = RuleSet::from_file(file).expect("fail to load rules");
+    info!("{} rules loaded", ruleset.len());
+    RULES.with(|r| r.borrow_mut().replace(ruleset));
 
     let mut queue = Queue::new();
     queue.open();

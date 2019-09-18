@@ -23,5 +23,4 @@ target/release/dnsnfset --help
 
 ## Future works
 1. Handle CNAME properly.
-2. Constant-time rules matching.
-
+2. Better rule config syntax

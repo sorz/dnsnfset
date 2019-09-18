@@ -15,7 +15,7 @@ pub trait NftCommand {
     );
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum NftFamily {
     Ip,
     Ip6,
@@ -42,7 +42,7 @@ impl FromStr for NftFamily {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum NftSetElemType {
     Ipv4Addr,
     Ipv6Addr,
