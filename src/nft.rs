@@ -3,7 +3,6 @@ use std::fmt::{self, Display, Formatter};
 use std::net::IpAddr;
 use std::str::FromStr;
 
-
 pub trait NftCommand {
     fn add_element(
         &mut self,
@@ -78,4 +77,3 @@ impl NftCommand for String {
         self.push_str("}; ");
     }
 }
-

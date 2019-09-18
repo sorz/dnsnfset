@@ -1,17 +1,17 @@
 use clap::{App, Arg};
 use dns_parser::{rdata::RData, Packet, QueryType};
 use env_logger;
+use etherparse::{SlicedPacket, TransportSlice};
 use libc::AF_INET;
-use log::{debug, info, warn, trace};
+use log::{debug, info, trace, warn};
 use nflog::{CopyMode, Message, Queue};
 use std::cell::RefCell;
 use std::net::IpAddr;
 use std::time::Instant;
-use etherparse::{SlicedPacket, TransportSlice};
 
 use dnsnfset::nft::{NftCommand, NftSetElemType};
-use dnsnfset::rule::{RuleSet, Set};
 use dnsnfset::nftables::Nftables;
+use dnsnfset::rule::{RuleSet, Set};
 
 thread_local! {
     static RULES: RefCell<Option<RuleSet>> = RefCell::default();
@@ -26,7 +26,7 @@ fn callback(msg: &Message) {
             None => return warn!("missing tranposrt-layer packet"),
             Some(TransportSlice::Tcp(_)) => return warn!("tcp segment found"),
             Some(TransportSlice::Udp(_)) => packet.payload,
-        }
+        },
     };
     match Packet::parse(payload) {
         Err(err) => warn!("fail to parse packet: {}", err),
@@ -46,7 +46,11 @@ fn handle_packet(pkt: Packet) {
 
     if let Some(name) = name {
         let sets = RULES.with(|ruleset| {
-            ruleset.borrow().as_ref().expect("uninitialised ruleset").match_all(&name)
+            ruleset
+                .borrow()
+                .as_ref()
+                .expect("uninitialised ruleset")
+                .match_all(&name)
         });
         if sets.is_empty() {
             return;
@@ -97,9 +101,7 @@ fn add_element(buf: &mut String, set: &Set, name: &str, addr: &IpAddr) {
 }
 
 fn main() {
-    env_logger::builder()
-        .default_format_timestamp(false)
-        .init();
+    env_logger::builder().default_format_timestamp(false).init();
     let matches = App::new("dnsnfset")
         .version(env!("CARGO_PKG_VERSION"))
         .author("Shell Chen <me@sorz.org>")

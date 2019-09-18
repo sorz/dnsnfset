@@ -5,11 +5,9 @@ use std::ffi::CString;
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
-
 pub struct Nftables {
     ctx: *mut nft_ctx,
 }
-
 
 impl Nftables {
     pub fn new() -> Self {
@@ -31,4 +29,3 @@ impl Drop for Nftables {
         unsafe { nft_ctx_free(self.ctx) };
     }
 }
-

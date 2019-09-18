@@ -1,6 +1,6 @@
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
-use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::nft::{NftFamily, NftSetElemType};
@@ -53,7 +53,13 @@ impl RuleSet {
             .expect("type is either ipv4_addr or ipv6_addr");
         let timeout = cols.next().filter(|t| !t.is_empty());
 
-        let set = Set { family, table, set_name, elem_type, timeout };
+        let set = Set {
+            family,
+            table,
+            set_name,
+            elem_type,
+            timeout,
+        };
         let set = match self.sets.get(&set) {
             Some(v) => v.clone(),
             None => {
@@ -68,7 +74,7 @@ impl RuleSet {
     pub fn match_all(&self, domain: &str) -> Vec<Rc<Set>> {
         let domain = domain.to_ascii_lowercase();
         let domain = if domain.ends_with('.') {
-            &domain.as_bytes()[..domain.len()-1]
+            &domain.as_bytes()[..domain.len() - 1]
         } else {
             domain.as_bytes()
         };
@@ -83,7 +89,7 @@ impl RuleSet {
         match_add(&[]);
         for n in (0..domain.len()).rev() {
             if domain[n] == 46 {
-                match_add(&domain[n+1..]);
+                match_add(&domain[n + 1..]);
             }
         }
         match_add(domain);
@@ -93,7 +99,6 @@ impl RuleSet {
     pub fn len(&self) -> usize {
         self.rules.values().map(|v| v.len()).sum()
     }
-
 }
 
 #[test]
