@@ -1,12 +1,18 @@
 use std::fmt::Write;
 use std::fmt::{self, Display, Formatter};
-use std::io;
 use std::net::IpAddr;
-use std::process::{Command, ExitStatus};
 use std::str::FromStr;
 
-pub struct NftCommand {
-    pub cmd: String,
+
+pub trait NftCommand {
+    fn add_element(
+        &mut self,
+        family: Option<NftFamily>,
+        table: &str,
+        set: &str,
+        addr: &IpAddr,
+        timeout: &Option<Box<str>>,
+    );
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -52,12 +58,8 @@ impl FromStr for NftSetElemType {
     }
 }
 
-impl NftCommand {
-    pub fn new() -> Self {
-        NftCommand { cmd: String::new() }
-    }
-
-    pub fn add_element(
+impl NftCommand for String {
+    fn add_element(
         &mut self,
         family: Option<NftFamily>,
         table: &str,
@@ -65,23 +67,15 @@ impl NftCommand {
         addr: &IpAddr,
         timeout: &Option<Box<str>>,
     ) {
-        self.cmd += "add element ";
+        self.push_str("add element ");
         if let Some(family) = family {
-            write!(self.cmd, "{} ", family).unwrap();
+            write!(self, "{} ", family).unwrap();
         }
-        write!(self.cmd, "{} {} {{ {} ", table, set, addr).unwrap();
+        write!(self, "{} {} {{ {} ", table, set, addr).unwrap();
         if let Some(timeout) = timeout {
-            write!(self.cmd, "timeout {} ", timeout).unwrap();
+            write!(self, "timeout {} ", timeout).unwrap();
         }
-        self.cmd += "}; ";
-    }
-
-    pub fn execute(self) -> Result<ExitStatus, io::Error> {
-        Command::new("nft").arg(self.cmd).status()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.cmd.is_empty()
+        self.push_str("}; ");
     }
 }
 

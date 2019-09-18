@@ -2,7 +2,7 @@ use clap::{App, Arg};
 use dns_parser::{rdata::RData, Packet, QueryType};
 use env_logger;
 use libc::AF_INET;
-use log::{debug, info, warn};
+use log::{debug, info, warn, trace};
 use nflog::{CopyMode, Message, Queue};
 use std::cell::RefCell;
 use std::net::IpAddr;
@@ -55,24 +55,24 @@ fn handle_packet(pkt: Packet) {
             })
             .collect(); // TODO: avoid allocate before match rule
 
-        let mut cmds = NftCommand::new();
+        let mut cmd = String::new();
         RULES.with(|rules| {
             let ruleset = rules.borrow();
             let rules = ruleset.iter().filter(|rule| rule.is_match(&name));
             for rule in rules {
                 for addr in records.iter() {
-                    add_element(&mut cmds, rule, &name, &addr);
+                    add_element(&mut cmd, rule, &name, &addr);
                 }
             }
         });
-        if !cmds.is_empty() {
+        if !cmd.is_empty() {
             info!("{} matched", name);
-            debug!("{}", cmds.cmd);
+            trace!("{}", cmd);
             let t = Instant::now();
             let result = NFT.with(|opt| {
                 let mut opt = opt.borrow_mut();
                 let nft = opt.get_or_insert_with(|| Nftables::new());
-                nft.run(cmds.cmd)
+                nft.run(cmd)
             });
             if result.is_err() {
                 warn!("fail to run nft cmd");
@@ -82,12 +82,12 @@ fn handle_packet(pkt: Packet) {
     }
 }
 
-fn add_element(nft: &mut NftCommand, rule: &Rule, name: &str, addr: &IpAddr) {
+fn add_element(buf: &mut String, rule: &Rule, name: &str, addr: &IpAddr) {
     match (rule.elem_type, addr) {
         (NftSetElemType::Ipv4Addr, IpAddr::V6(_)) | (NftSetElemType::Ipv6Addr, IpAddr::V4(_)) => (),
         _ => {
             debug!("add {} {:?} to {}", name, addr, rule.set);
-            nft.add_element(rule.family, &rule.table, &rule.set, addr, &rule.timeout);
+            buf.add_element(rule.family, &rule.table, &rule.set, addr, &rule.timeout);
         }
     }
 }
