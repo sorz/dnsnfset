@@ -29,7 +29,7 @@ fn callback(msg: &Message) {
         },
     };
     match Packet::parse(payload) {
-        Err(err) => warn!("fail to parse packet: {}", err),
+        Err(err) => debug!("fail to parse dns packet: {}", err),
         Ok(packet) => handle_packet(packet),
     }
 }
