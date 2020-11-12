@@ -7,12 +7,14 @@ use std::{
     net::IpAddr,
     os::unix::net::{UnixListener, UnixStream},
     thread,
-    time::Instant,
 };
 
-use dnsnfset::nft::{NftCommand, NftSetElemType};
-use dnsnfset::nftables::Nftables;
-use dnsnfset::rule::{RuleSet, Set};
+use dnsnfset::{
+    nft::{NftCommand, NftSetElemType},
+    nftables::Nftables,
+    rule::{RuleSet, Set},
+    socks::AutoRemoveFile,
+};
 
 thread_local! {
     static RULES: RefCell<Option<RuleSet>> = RefCell::default();
@@ -29,7 +31,7 @@ fn handle_stream(mut stream: UnixStream) -> Result<()> {
         if n == 0 {
             break Ok(());
         }
-        debug!("recv: {}", String::from_utf8_lossy(&buf[..n]));
+        debug!("recv {} bytes: {}", n, String::from_utf8_lossy(&buf[..n]));
     }
 
     /*
@@ -140,9 +142,10 @@ fn main() {
                 .default_value("rules.conf"),
         )
         .get_matches();
-    let socks_path = matches
+    let socks_path: AutoRemoveFile = matches
         .value_of("socks-path")
-        .expect("missing socks-path argument");
+        .expect("missing socks-path argument")
+        .into();
     let file = matches.value_of("rules").expect("missing rules file path");
 
     let ruleset = RuleSet::from_file(file).expect("fail to load rules");
