@@ -1,13 +1,14 @@
 use clap::{App, Arg};
-use dns_parser::{rdata::RData, Packet, QueryType};
 use env_logger;
-use etherparse::{SlicedPacket, TransportSlice};
-use libc::AF_INET;
 use log::{debug, info, trace, warn};
-use nflog::{CopyMode, Message, Queue};
-use std::cell::RefCell;
-use std::net::IpAddr;
-use std::time::Instant;
+use std::{
+    cell::RefCell,
+    io::{Read, Result},
+    net::IpAddr,
+    os::unix::net::{UnixListener, UnixStream},
+    thread,
+    time::Instant,
+};
 
 use dnsnfset::nft::{NftCommand, NftSetElemType};
 use dnsnfset::nftables::Nftables;
@@ -18,7 +19,20 @@ thread_local! {
     static NFT: RefCell<Option<Nftables>> = RefCell::default();
 }
 
-fn callback(msg: &Message) {
+fn handle_stream(mut stream: UnixStream) -> Result<()> {
+    info!("unbound connected");
+
+    let mut buf = [0u8; 1024];
+
+    loop {
+        let n = stream.read(&mut buf)?;
+        if n == 0 {
+            break Ok(());
+        }
+        debug!("recv: {}", String::from_utf8_lossy(&buf[..n]));
+    }
+
+    /*
     let ip = msg.get_payload();
     let payload = match SlicedPacket::from_ip(&ip) {
         Err(err) => return warn!("fail to parse ip packet: {:?}", err),
@@ -32,8 +46,10 @@ fn callback(msg: &Message) {
         Err(err) => debug!("fail to parse dns packet: {}", err),
         Ok(packet) => handle_packet(packet),
     }
+    */
 }
 
+/*
 fn handle_packet(pkt: Packet) {
     let name = pkt
         .questions
@@ -89,6 +105,7 @@ fn handle_packet(pkt: Packet) {
         debug!("{:?}", t.elapsed());
     }
 }
+*/
 
 fn add_element(buf: &mut String, set: &Set, name: &str, addr: &IpAddr) {
     match (set.elem_type, addr) {
@@ -101,18 +118,18 @@ fn add_element(buf: &mut String, set: &Set, name: &str, addr: &IpAddr) {
 }
 
 fn main() {
-    env_logger::builder().default_format_timestamp(false).init();
+    env_logger::builder().format_timestamp(None).init();
     let matches = App::new("dnsnfset")
         .version(env!("CARGO_PKG_VERSION"))
         .author("Shell Chen <me@sorz.org>")
         .about("Add IPs in DNS response to nftables sets")
         .arg(
-            Arg::with_name("group")
-                .long("group")
-                .short("n")
-                .help("NFLOG group to bind on")
+            Arg::with_name("socks-path")
+                .long("socks-path")
+                .short("s")
+                .help("UNIX domain socket to bind on")
                 .takes_value(true)
-                .default_value("0"),
+                .default_value("/var/run/dnsnfset/dnstap.sock"),
         )
         .arg(
             Arg::with_name("rules")
@@ -123,28 +140,27 @@ fn main() {
                 .default_value("rules.conf"),
         )
         .get_matches();
-    let group = matches
-        .value_of("group")
-        .expect("missing NFLOG group")
-        .parse()
-        .expect("group must be a natural number");
+    let socks_path = matches
+        .value_of("socks-path")
+        .expect("missing socks-path argument");
     let file = matches.value_of("rules").expect("missing rules file path");
 
     let ruleset = RuleSet::from_file(file).expect("fail to load rules");
     info!("{} rules loaded", ruleset.len());
     RULES.with(|r| r.borrow_mut().replace(ruleset));
 
-    let mut queue = Queue::new();
-    queue.open();
-    let rc = queue.bind(AF_INET);
-    if rc != 0 {
-        panic!("fail to bind nfqueue");
+    let listener = UnixListener::bind(&socks_path).expect("fail to bind socket");
+    info!("listen on {}", socks_path);
+
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => {
+                thread::spawn(move || match handle_stream(stream) {
+                    Ok(_) => info!("unbound disconnected"),
+                    Err(err) => warn!("error on thread: {}", err),
+                });
+            }
+            Err(err) => panic!("fail to connect: {}", err),
+        }
     }
-    queue.bind_group(group);
-    queue.set_mode(CopyMode::CopyPacket, 0xffff);
-    queue.set_callback(callback);
-    info!("listen on queue {}", group);
-    queue.run_loop();
-    info!("exit");
-    queue.close();
 }
