@@ -116,7 +116,8 @@ dependencies = [
  "libc",
  "log",
  "mnl",
- "nflog",
+ "protobuf",
+ "protobuf-codegen-pure",
 ]
 
 [[package]]
@@ -240,15 +241,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nflog"
-version = "0.9.0"
-source = "git+https://github.com/sorz/nflog-rs#e3622e6450a1669f6bfc800fcea0d1da1311a777"
-dependencies = [
- "libc",
- "log",
-]
-
-[[package]]
 name = "nom"
 version = "5.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -277,6 +269,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e0704ee1a7e00d7bb417d0770ea303c1bccbabf0ef1667dae92b5967f5f8a71"
 dependencies = [
  "unicode-xid",
+]
+
+[[package]]
+name = "protobuf"
+version = "2.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d147edb77bcccbfc81fabffdc7bd50c13e103b15ca1e27515fe40de69a5776b"
+
+[[package]]
+name = "protobuf-codegen"
+version = "2.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e81f70c25aab9506f87253c55f7cdcd8917635d5597382958d20025c211bbbd"
+dependencies = [
+ "protobuf",
+]
+
+[[package]]
+name = "protobuf-codegen-pure"
+version = "2.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6af8d72d9e14fd41a954f4d5b310396151437c83d2bfcbf19d3073af90e46288"
+dependencies = [
+ "protobuf",
+ "protobuf-codegen",
 ]
 
 [[package]]

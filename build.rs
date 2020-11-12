@@ -1,4 +1,5 @@
 use bindgen;
+use protobuf_codegen_pure as protobuf;
 use std::env;
 use std::path::PathBuf;
 
@@ -12,8 +13,15 @@ fn main() {
         .generate()
         .expect("Unable to generate bindings");
 
-    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     bindings
-        .write_to_file(out_path.join("bindings.rs"))
+        .write_to_file(out_dir.join("bindings.rs"))
         .expect("Couldn't write bindings!");
+
+    protobuf::Codegen::new()
+        .out_dir("src")
+        .include("dnstap.pb")
+        .input("dnstap.pb/dnstap.proto")
+        .run()
+        .expect("Couldn't generate dnstap protobuf");
 }

@@ -1,6 +1,7 @@
 use clap::{App, Arg};
 use env_logger;
 use log::{debug, info, trace, warn};
+use protobuf::CodedInputStream;
 use std::{
     cell::RefCell,
     io::{Read, Result},
@@ -10,6 +11,7 @@ use std::{
 };
 
 use dnsnfset::{
+    dnstap::Dnstap,
     nft::{NftCommand, NftSetElemType},
     nftables::Nftables,
     rule::{RuleSet, Set},
@@ -24,14 +26,11 @@ thread_local! {
 fn handle_stream(mut stream: UnixStream) -> Result<()> {
     info!("unbound connected");
 
-    let mut buf = [0u8; 1024];
+    let mut input = CodedInputStream::new(&mut stream);
 
     loop {
-        let n = stream.read(&mut buf)?;
-        if n == 0 {
-            break Ok(());
-        }
-        debug!("recv {} bytes: {}", n, String::from_utf8_lossy(&buf[..n]));
+        let msg: Dnstap = input.read_message()?;
+        debug!("recv: {:?}", msg);
     }
 
     /*

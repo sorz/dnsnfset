@@ -10,10 +10,8 @@ log = "0.4"
 env_logger = "0.8"
 clap = "2.33"
 mnl = "0.2.0"
-
-[dependencies.nflog]
-git = "https://github.com/sorz/nflog-rs"
+protobuf = "2.18"
 
 [build-dependencies]
 bindgen = "0.55"
-
+protobuf-codegen-pure = "2.18"
