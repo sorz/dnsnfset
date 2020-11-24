@@ -1,7 +1,8 @@
 use clap::{App, Arg};
 use env_logger;
+use fstrm::FstrmReader;
 use log::{debug, info, trace, warn};
-use protobuf::CodedInputStream;
+use protobuf::parse_from_reader;
 use std::{
     cell::RefCell,
     io::{Read, Result},
@@ -26,12 +27,27 @@ thread_local! {
 fn handle_stream(mut stream: UnixStream) -> Result<()> {
     info!("unbound connected");
 
-    let mut input = CodedInputStream::new(&mut stream);
+    let reader = FstrmReader::<_, ()>::new(stream);
+    let mut reader = reader.accept()?.start()?;
 
-    loop {
-        let msg: Dnstap = input.read_message()?;
-        debug!("recv: {:?}", msg);
+    debug!("FSTRM handshake finish {:?}", reader.content_types());
+
+    while let Some(mut frame) = reader.read_frame()? {
+        let dnstap: Dnstap = parse_from_reader(&mut frame)?;
+        let msg = dnstap.get_message();
+        let resp = msg.get_response_message();
+        debug!(
+            "got dnstap messge {:?} with {} bytes response",
+            msg.get_field_type(),
+            resp.len()
+        );
+        if resp.is_empty() {
+            continue;
+        }
+        trace!("response message: {:?}", resp);
     }
+
+    Ok(())
 
     /*
     let ip = msg.get_payload();
@@ -141,7 +157,7 @@ fn main() {
                 .default_value("rules.conf"),
         )
         .get_matches();
-    let socks_path: AutoRemoveFile = matches
+    let mut socks_path: AutoRemoveFile = matches
         .value_of("socks-path")
         .expect("missing socks-path argument")
         .into();
@@ -153,6 +169,7 @@ fn main() {
 
     let listener = UnixListener::bind(&socks_path).expect("fail to bind socket");
     info!("listen on {}", socks_path);
+    socks_path.set_auto_remove(true);
 
     for stream in listener.incoming() {
         match stream {

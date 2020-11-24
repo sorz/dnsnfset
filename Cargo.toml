@@ -11,6 +11,7 @@ env_logger = "0.8"
 clap = "2.33"
 mnl = "0.2.0"
 protobuf = "2.18"
+fstrm = { git = "https://github.com/sorz/rust-fstrm/", rev = "5416fa0" }
 
 [build-dependencies]
 bindgen = "0.55"
