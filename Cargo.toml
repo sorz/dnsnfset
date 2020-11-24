@@ -10,6 +10,7 @@ log = "0.4"
 env_logger = "0.8"
 clap = "2.33"
 mnl = "0.2.0"
+dns-parser = "0.8"
 protobuf = "2.18"
 fstrm = { git = "https://github.com/sorz/rust-fstrm/", rev = "5416fa0" }
 

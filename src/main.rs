@@ -1,14 +1,15 @@
 use clap::{App, Arg};
-use env_logger;
+use dns_parser::{rdata::RData, Packet as DnsPacket, QueryType};
 use fstrm::FstrmReader;
 use log::{debug, info, trace, warn};
 use protobuf::parse_from_reader;
 use std::{
     cell::RefCell,
-    io::{Read, Result},
+    io::Result,
     net::IpAddr,
     os::unix::net::{UnixListener, UnixStream},
     thread,
+    time::Instant,
 };
 
 use dnsnfset::{
@@ -24,7 +25,7 @@ thread_local! {
     static NFT: RefCell<Option<Nftables>> = RefCell::default();
 }
 
-fn handle_stream(mut stream: UnixStream) -> Result<()> {
+fn handle_stream(stream: UnixStream) -> Result<()> {
     info!("unbound connected");
 
     let reader = FstrmReader::<_, ()>::new(stream);
@@ -36,46 +37,25 @@ fn handle_stream(mut stream: UnixStream) -> Result<()> {
         let dnstap: Dnstap = parse_from_reader(&mut frame)?;
         let msg = dnstap.get_message();
         let resp = msg.get_response_message();
-        debug!(
-            "got dnstap messge {:?} with {} bytes response",
-            msg.get_field_type(),
-            resp.len()
-        );
+        debug!("got {:?} ({}B resp)", msg.get_field_type(), resp.len());
         if resp.is_empty() {
             continue;
         }
-        trace!("response message: {:?}", resp);
+        match DnsPacket::parse(resp) {
+            Err(err) => debug!("fail to parse dns packet: {}", err),
+            Ok(packet) => handle_packet(packet),
+        }
     }
-
     Ok(())
-
-    /*
-    let ip = msg.get_payload();
-    let payload = match SlicedPacket::from_ip(&ip) {
-        Err(err) => return warn!("fail to parse ip packet: {:?}", err),
-        Ok(packet) => match packet.transport {
-            None => return warn!("missing tranposrt-layer packet"),
-            Some(TransportSlice::Tcp(_)) => return warn!("tcp segment found"),
-            Some(TransportSlice::Udp(_)) => packet.payload,
-        },
-    };
-    match Packet::parse(payload) {
-        Err(err) => debug!("fail to parse dns packet: {}", err),
-        Ok(packet) => handle_packet(packet),
-    }
-    */
 }
 
-/*
-fn handle_packet(pkt: Packet) {
+fn handle_packet(pkt: DnsPacket) {
     let name = pkt
         .questions
         .iter()
-        .find(|question| match question.qtype {
-            QueryType::A | QueryType::AAAA => true,
-            _ => false,
-        })
+        .find(|question| matches!(question.qtype, QueryType::A | QueryType::AAAA))
         .map(|question| question.qname.to_string());
+    trace!("name {:?}", name);
 
     if let Some(name) = name {
         let sets = RULES.with(|ruleset| {
@@ -113,7 +93,7 @@ fn handle_packet(pkt: Packet) {
         let t = Instant::now();
         let result = NFT.with(|opt| {
             let mut opt = opt.borrow_mut();
-            let nft = opt.get_or_insert_with(|| Nftables::new());
+            let nft = opt.get_or_insert_with(Nftables::new);
             nft.run(cmd)
         });
         if result.is_err() {
@@ -122,7 +102,6 @@ fn handle_packet(pkt: Packet) {
         debug!("{:?}", t.elapsed());
     }
 }
-*/
 
 fn add_element(buf: &mut String, set: &Set, name: &str, addr: &IpAddr) {
     match (set.elem_type, addr) {

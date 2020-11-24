@@ -113,11 +113,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "dns-parser"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4d33be9473d06f75f58220f71f7a9317aca647dc061dbd3c361b0bef505fbea"
+dependencies = [
+ "byteorder",
+ "quick-error",
+]
+
+[[package]]
 name = "dnsnfset"
 version = "0.1.1"
 dependencies = [
  "bindgen",
  "clap",
+ "dns-parser",
  "env_logger 0.8.1",
  "fstrm",
  "libc",
