@@ -27,7 +27,7 @@ impl RuleSet {
         for line in BufReader::new(file).lines() {
             let line = line?;
             let line = line.trim();
-            if line.starts_with("#") || line.starts_with("//") || line.is_empty() {
+            if line.starts_with('#') || line.starts_with("//") || line.is_empty() {
                 continue;
             }
             ruleset.add(&line);
@@ -36,7 +36,7 @@ impl RuleSet {
     }
 
     fn add(&mut self, s: &str) {
-        let mut cols = s.split(",").map(|s| s.trim().to_string().into_boxed_str());
+        let mut cols = s.split(',').map(|s| s.trim().to_string().into_boxed_str());
         let domain = cols.next().expect("domain is missing");
         let family = cols.next().expect("family is missing");
         let family = if family.is_empty() {
@@ -98,6 +98,10 @@ impl RuleSet {
 
     pub fn len(&self) -> usize {
         self.rules.values().map(|v| v.len()).sum()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 

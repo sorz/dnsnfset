@@ -24,6 +24,12 @@ impl Nftables {
     }
 }
 
+impl Default for Nftables {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Drop for Nftables {
     fn drop(&mut self) {
         unsafe { nft_ctx_free(self.ctx) };
