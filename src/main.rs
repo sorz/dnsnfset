@@ -1,5 +1,5 @@
 use clap::{App, Arg};
-use dns_parser::{rdata::RData, Packet as DnsPacket, QueryType, Error as DnsError};
+use dns_parser::{rdata::RData, Error as DnsError, Packet as DnsPacket, QueryType};
 use fstrm::FstrmReader;
 use log::{debug, info, trace, warn};
 use protobuf::parse_from_reader;
@@ -32,7 +32,7 @@ fn handle_stream(stream: UnixStream, ruleset: Arc<RuleSet>) -> Result<()> {
         let dnstap: Dnstap = parse_from_reader(&mut frame)?;
         let msg = dnstap.get_message();
         let resp = msg.get_response_message();
-        debug!("got {:?} ({}B resp)", msg.get_field_type(), resp.len());
+        trace!("got {:?} ({}B resp)", msg.get_field_type(), resp.len());
         if resp.is_empty() {
             continue;
         }

@@ -3,15 +3,16 @@ Description=Add IP addresses in DNS replies into nftables sets
 After=network.target
 
 [Service]
-Type=simple
-User=nobody
-Group=nobody
-Environment=RUST_LOG=dnsnfset
-ExecStart=/opt/dnsnfset/dnsnfset -n 0 -f rules.conf
+Type=exec
+User=unbound
+RuntimeDirectory=dnsnfset
+Environment=RUST_LOG=dnsnfset=debug
+ExecStart=/opt/dnsnfset/dnsnfset -f rules.conf -s /run/dnsnfset/dnstap.sock
 WorkingDirectory=/opt/dnsnfset
-Restart=on-failure
 
 AmbientCapabilities=CAP_NET_ADMIN
+RestrictAddressFamilies=AF_NETLINK AF_UNIX
+
 PrivateDevices=true
 ProtectSystem=strict 
 ProtectHome=true
