@@ -1,6 +1,7 @@
 # dnsnfset
 
-Add IP addresses from DNS replies into nftables' sets.
+Add IP addresses from DNS replies into
+[nftables' sets](https://wiki.nftables.org/wiki-nftables/index.php/Sets).
 
 Two sources of *DNS replies* are avaliable:
 
