@@ -1,5 +1,5 @@
 use clap::{App, Arg};
-use dns_parser::{rdata::RData, Packet as DnsPacket, QueryType};
+use dns_parser::{rdata::RData, Packet as DnsPacket, QueryType, Error as DnsError};
 use fstrm::FstrmReader;
 use log::{debug, info, trace, warn};
 use protobuf::parse_from_reader;
@@ -37,6 +37,7 @@ fn handle_stream(stream: UnixStream, ruleset: Arc<RuleSet>) -> Result<()> {
             continue;
         }
         match DnsPacket::parse(resp) {
+            Err(DnsError::InvalidQueryType(_)) => (),
             Err(err) => debug!("fail to parse dns packet: {}", err),
             Ok(packet) => handle_packet(packet, &ruleset, &mut nft),
         }
