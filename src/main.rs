@@ -4,10 +4,10 @@ use fstrm::FstrmReader;
 use log::{debug, info, trace, warn};
 use protobuf::parse_from_reader;
 use std::{
-    cell::RefCell,
     io::Result,
     net::IpAddr,
     os::unix::net::{UnixListener, UnixStream},
+    sync::Arc,
     thread,
     time::Instant,
 };
@@ -20,18 +20,13 @@ use dnsnfset::{
     socks::AutoRemoveFile,
 };
 
-thread_local! {
-    static RULES: RefCell<Option<RuleSet>> = RefCell::default();
-    static NFT: RefCell<Option<Nftables>> = RefCell::default();
-}
-
-fn handle_stream(stream: UnixStream) -> Result<()> {
+fn handle_stream(stream: UnixStream, ruleset: Arc<RuleSet>) -> Result<()> {
     info!("unbound connected");
-
     let reader = FstrmReader::<_, ()>::new(stream);
     let mut reader = reader.accept()?.start()?;
-
     debug!("FSTRM handshake finish {:?}", reader.content_types());
+
+    let mut nft = Nftables::new();
 
     while let Some(mut frame) = reader.read_frame()? {
         let dnstap: Dnstap = parse_from_reader(&mut frame)?;
@@ -43,13 +38,13 @@ fn handle_stream(stream: UnixStream) -> Result<()> {
         }
         match DnsPacket::parse(resp) {
             Err(err) => debug!("fail to parse dns packet: {}", err),
-            Ok(packet) => handle_packet(packet),
+            Ok(packet) => handle_packet(packet, &ruleset, &mut nft),
         }
     }
     Ok(())
 }
 
-fn handle_packet(pkt: DnsPacket) {
+fn handle_packet(pkt: DnsPacket, ruleset: &RuleSet, nft: &mut Nftables) {
     let name = pkt
         .questions
         .iter()
@@ -58,13 +53,7 @@ fn handle_packet(pkt: DnsPacket) {
     trace!("name {:?}", name);
 
     if let Some(name) = name {
-        let sets = RULES.with(|ruleset| {
-            ruleset
-                .borrow()
-                .as_ref()
-                .expect("uninitialised ruleset")
-                .match_all(&name)
-        });
+        let sets = ruleset.match_all(&name);
         if sets.is_empty() {
             return;
         }
@@ -91,12 +80,7 @@ fn handle_packet(pkt: DnsPacket) {
         info!("{} matched", name);
         trace!("{}", cmd);
         let t = Instant::now();
-        let result = NFT.with(|opt| {
-            let mut opt = opt.borrow_mut();
-            let nft = opt.get_or_insert_with(Nftables::new);
-            nft.run(cmd)
-        });
-        if result.is_err() {
+        if nft.run(cmd).is_err() {
             warn!("fail to run nft cmd");
         }
         debug!("{:?}", t.elapsed());
@@ -143,8 +127,8 @@ fn main() {
     let file = matches.value_of("rules").expect("missing rules file path");
 
     let ruleset = RuleSet::from_file(file).expect("fail to load rules");
+    let ruleset = Arc::new(ruleset);
     info!("{} rules loaded", ruleset.len());
-    RULES.with(|r| r.borrow_mut().replace(ruleset));
 
     let listener = UnixListener::bind(&socks_path).expect("fail to bind socket");
     info!("listen on {}", socks_path);
@@ -153,7 +137,8 @@ fn main() {
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                thread::spawn(move || match handle_stream(stream) {
+                let rules = ruleset.clone();
+                thread::spawn(move || match handle_stream(stream, rules) {
                     Ok(_) => info!("unbound disconnected"),
                     Err(err) => warn!("error on thread: {}", err),
                 });

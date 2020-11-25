@@ -1,14 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::nft::{NftFamily, NftSetElemType};
 
 #[derive(Debug, Clone, Default)]
 pub struct RuleSet {
-    sets: HashSet<Rc<Set>>,
-    rules: HashMap<Box<[u8]>, Vec<Rc<Set>>>,
+    sets: HashSet<Arc<Set>>,
+    rules: HashMap<Box<[u8]>, Vec<Arc<Set>>>,
 }
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -63,7 +63,7 @@ impl RuleSet {
         let set = match self.sets.get(&set) {
             Some(v) => v.clone(),
             None => {
-                let v = Rc::new(set);
+                let v = Arc::new(set);
                 self.sets.insert(v.clone());
                 v
             }
@@ -71,7 +71,7 @@ impl RuleSet {
         self.rules.entry(domain.into()).or_default().push(set);
     }
 
-    pub fn match_all(&self, domain: &str) -> Vec<Rc<Set>> {
+    pub fn match_all(&self, domain: &str) -> Vec<Arc<Set>> {
         let domain = domain.to_ascii_lowercase();
         let domain = if domain.ends_with('.') {
             &domain.as_bytes()[..domain.len() - 1]

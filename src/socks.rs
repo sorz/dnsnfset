@@ -24,7 +24,9 @@ impl<'a> From<&'a str> for AutoRemoveFile<'a> {
 
 impl<'a> Drop for AutoRemoveFile<'a> {
     fn drop(&mut self) {
+        println!("drop?");
         if self.auto_remove {
+            println!("drop!");
             if let Err(err) = remove_file(&self.path) {
                 warn!("fail to remove {}: {}", self.path, err);
             }
