@@ -2,7 +2,6 @@ use clap::{App, Arg};
 use dns_parser::{rdata::RData, Error as DnsError, Packet as DnsPacket, QueryType};
 use fstrm::FstrmReader;
 use log::{debug, info, trace, warn};
-use protobuf::parse_from_reader;
 use std::{
     io::Result,
     net::IpAddr,
@@ -29,7 +28,7 @@ fn handle_stream(stream: UnixStream, ruleset: Arc<RuleSet>) -> Result<()> {
     let mut nft = Nftables::new();
 
     while let Some(mut frame) = reader.read_frame()? {
-        let dnstap: Dnstap = parse_from_reader(&mut frame)?;
+        let dnstap: Dnstap = protobuf::Message::parse_from_reader(&mut frame)?;
         let msg = dnstap.get_message();
         let resp = msg.get_response_message();
         trace!("got {:?} ({}B resp)", msg.get_field_type(), resp.len());

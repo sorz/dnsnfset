@@ -1,4 +1,3 @@
-use bindgen;
 use protobuf_codegen_pure as protobuf;
 use std::env;
 use std::path::PathBuf;
@@ -6,9 +5,9 @@ use std::path::PathBuf;
 fn main() {
     println!("cargo:rustc-link-lib=nftables");
     let bindings = bindgen::Builder::default()
-        .whitelist_function("nft_run_cmd_from_buffer")
-        .whitelist_function("nft_ctx_(new|free)")
-        .whitelist_type("nft_ctx")
+        .allowlist_function("nft_run_cmd_from_buffer")
+        .allowlist_function("nft_ctx_(new|free)")
+        .allowlist_type("nft_ctx")
         .header("wrapper.h")
         .generate()
         .expect("Unable to generate bindings");
