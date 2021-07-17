@@ -45,14 +45,14 @@ fn handle_stream(stream: UnixStream, ruleset: Arc<RuleSet>) -> Result<()> {
 }
 
 fn handle_packet(pkt: DnsPacket, ruleset: &RuleSet, nft: &mut Nftables) {
-    let name = pkt
+    let qtype_qname = pkt
         .questions
         .iter()
-        .find(|question| matches!(question.qtype, QueryType::A | QueryType::AAAA))
-        .map(|question| question.qname.to_string());
-    trace!("name {:?}", name);
+        .find(|q| matches!(q.qtype, QueryType::A | QueryType::AAAA))
+        .map(|q| (q.qtype, q.qname.to_string()));
+    trace!("name {:?}", qtype_qname);
 
-    if let Some(name) = name {
+    if let Some((qtype, name)) = qtype_qname {
         let sets = ruleset.match_all(&name);
         if sets.is_empty() {
             return;
@@ -74,10 +74,10 @@ fn handle_packet(pkt: DnsPacket, ruleset: &RuleSet, nft: &mut Nftables) {
             }
         }
         if cmd.is_empty() {
+            debug!("match {} with zero {:?} record", name, qtype);
             return;
         }
-
-        info!("{} matched", name);
+        info!("match {} with {} {:?} record(s)", name, records.len(), qtype);
         trace!("{}", cmd);
         let t = Instant::now();
         if nft.run(cmd).is_err() {
@@ -91,7 +91,7 @@ fn add_element(buf: &mut String, set: &Set, name: &str, addr: &IpAddr) {
     match (set.elem_type, addr) {
         (NftSetElemType::Ipv4Addr, IpAddr::V6(_)) | (NftSetElemType::Ipv6Addr, IpAddr::V4(_)) => (),
         _ => {
-            debug!("add {} {:?} to {}", name, addr, set.set_name);
+            debug!("  add {} {:?} to {}", name, addr, set.set_name);
             buf.add_element(set.family, &set.table, &set.set_name, addr, &set.timeout);
         }
     }
