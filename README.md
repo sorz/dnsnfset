@@ -30,8 +30,6 @@ cargo build --release
 target/release/dnsnfset --help
 ```
 
-Make sure you have the header of `libnftables` in your system.
-
 ## Usage
 1. Configure your resolver to log DNS replies via dnstap. Unbound for example:
 ```
