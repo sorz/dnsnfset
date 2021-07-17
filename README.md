@@ -15,10 +15,16 @@ Use dnstap if your resolver support it. It's faster (you got nfset updated BEFOR
 DNS replies sending out), and it avoid redundant nfset updatings.
 
 ## Build
-Install Rust toolchain ([rustup.rs](https://rustup.rs)). Then,
+Install Rust toolchain ([rustup.rs](https://rustup.rs)).
+
+Install `libclang` ([bindgen requirements](https://rust-lang.github.io/rust-bindgen/requirements.html#clang)).
+
+Install `libnftables` (`apt install libnftables-dev` for example).
+
+Finally,
 
 ```bash
-git clone https://github.com/sorz/dnsnfset
+git clone --recurse-submodules https://github.com/sorz/dnsnfset
 cd dnsnfset
 cargo build --release
 target/release/dnsnfset --help
