@@ -11,9 +11,9 @@ env_logger = "0.11"
 clap = "4"
 mnl = "0.3"
 dns-parser = "0.8"
-protobuf = "2"
+protobuf = "4.36.1-release"
 fstrm = { git = "https://github.com/sorz/rust-fstrm/", rev = "5416fa0" }
 
 [build-dependencies]
 bindgen = "0.72"
-protobuf-codegen-pure = "2.28"
+protobuf-codegen = "4.36.1-release"

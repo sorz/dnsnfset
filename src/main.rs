@@ -2,8 +2,9 @@ use clap::{Arg, Command};
 use dns_parser::{rdata::RData, Error as DnsError, Packet as DnsPacket, QueryType};
 use fstrm::FstrmReader;
 use log::{debug, info, trace, warn};
+use protobuf::prelude::*;
 use std::{
-    io::Result,
+    io::{self, Read, Result},
     net::IpAddr,
     os::unix::net::{UnixListener, UnixStream},
     sync::Arc,
@@ -26,12 +27,16 @@ fn handle_stream(stream: UnixStream, ruleset: Arc<RuleSet>) -> Result<()> {
     debug!("FSTRM handshake finish {:?}", reader.content_types());
 
     let mut nft = Nftables::new();
+    let mut buf = Vec::new();
 
     while let Some(mut frame) = reader.read_frame()? {
-        let dnstap: Dnstap = protobuf::Message::parse_from_reader(&mut frame)?;
-        let msg = dnstap.get_message();
-        let resp = msg.get_response_message();
-        trace!("got {:?} ({}B resp)", msg.get_field_type(), resp.len());
+        buf.clear();
+        frame.read_to_end(&mut buf)?;
+        // FIXME: bubble up parse error
+        let dnstap = Dnstap::parse(&buf).map_err(|_| io::ErrorKind::InvalidData)?;
+        let msg = dnstap.message();
+        let resp = msg.response_message();
+        trace!("got {:?} ({}B resp)", msg.r#type(), resp.len());
         if resp.is_empty() {
             continue;
         }
