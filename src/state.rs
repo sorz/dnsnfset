@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use compact_str::CompactString;
 use log::{info, warn};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -13,8 +14,8 @@ use crate::rule::{RuleSet, Set};
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SetKey {
     pub family: Option<NftFamily>,
-    pub table: Box<str>,
-    pub set_name: Box<str>,
+    pub table: CompactString,
+    pub set_name: CompactString,
 }
 
 impl From<&Set> for SetKey {

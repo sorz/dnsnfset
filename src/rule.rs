@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use compact_str::CompactString;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Read;
@@ -13,14 +14,14 @@ use crate::nft::{NftFamily, NftSetElemType};
 #[derive(Debug, Clone, Default)]
 pub struct RuleSet {
     sets: HashSet<Arc<Set>>,
-    rules: HashMap<Box<[u8]>, Vec<Arc<Set>>>,
+    rules: HashMap<CompactString, Vec<Arc<Set>>>,
 }
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct Set {
     pub family: Option<NftFamily>,
-    pub table: Box<str>,
-    pub set_name: Box<str>,
+    pub table: CompactString,
+    pub set_name: CompactString,
     pub elem_type: NftSetElemType,
     pub timeout: Option<Duration>,
 }
@@ -28,26 +29,26 @@ pub struct Set {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SetConfig {
-    pub table: Option<String>,
-    pub set: Option<String>,
+    pub table: Option<CompactString>,
+    pub set: Option<CompactString>,
     #[serde(alias = "set_name")]
-    pub name: Option<String>,
+    pub name: Option<CompactString>,
     pub family: Option<NftFamily>,
     #[serde(default)]
     pub r#type: Option<NftSetElemType>,
-    pub timeout: Option<String>,
+    pub timeout: Option<CompactString>,
     #[serde(default)]
-    pub domains: Vec<String>,
+    pub domains: Vec<CompactString>,
 }
 
-fn normalize_domain(domain: &str) -> Box<[u8]> {
+fn normalize_domain(domain: &str) -> CompactString {
     let d = domain.trim().to_ascii_lowercase();
     if d == "*" || d.is_empty() {
-        return Box::new([]);
+        return CompactString::new("");
     }
     let d = d.strip_prefix('.').unwrap_or(&d);
     let d = d.strip_suffix('.').unwrap_or(d);
-    d.as_bytes().to_vec().into_boxed_slice()
+    CompactString::new(d)
 }
 
 impl RuleSet {
@@ -64,7 +65,7 @@ impl RuleSet {
 
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Result<Self> {
-        let tables: HashMap<String, HashMap<String, SetConfig>> =
+        let tables: HashMap<CompactString, HashMap<CompactString, SetConfig>> =
             toml::from_str(s).context("failed to parse TOML configuration")?;
 
         let mut ruleset = RuleSet::default();
@@ -110,8 +111,8 @@ impl RuleSet {
 
                 let set = Set {
                     family: config.family,
-                    table: table.clone().into_boxed_str(),
-                    set_name: set_name.clone().into_boxed_str(),
+                    table,
+                    set_name,
                     elem_type,
                     timeout,
                 };
@@ -144,22 +145,18 @@ impl RuleSet {
 
     pub fn match_all(&self, domain: &str) -> Vec<Arc<Set>> {
         let domain = domain.to_ascii_lowercase();
-        let domain = if domain.ends_with('.') {
-            &domain.as_bytes()[..domain.len() - 1]
-        } else {
-            domain.as_bytes()
-        };
+        let domain = domain.strip_suffix('.').unwrap_or(&domain);
 
         let mut matched_set = Vec::new();
-        let mut match_add = |suffix: &[u8]| {
+        let mut match_add = |suffix: &str| {
             if let Some(sets) = self.rules.get(suffix) {
                 matched_set.extend(sets.iter().cloned());
             }
         };
 
-        match_add(&[]);
-        for n in (0..domain.len()).rev() {
-            if domain[n] == 46 {
+        match_add("");
+        for (n, b) in domain.bytes().enumerate().rev() {
+            if b == b'.' {
                 match_add(&domain[n + 1..]);
             }
         }

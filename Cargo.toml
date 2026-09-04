@@ -18,6 +18,7 @@ toml = "1"
 anyhow = "1"
 fundu = "2"
 serde_json = "1"
+compact_str = { version = "0.10", features = ["serde"] }
 
 [build-dependencies]
 bindgen = "0.72"
