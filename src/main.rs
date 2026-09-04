@@ -77,7 +77,12 @@ fn handle_packet(pkt: DnsPacket, ruleset: &RuleSet, nft: &mut Nftables) {
             debug!("match {} with zero {:?} record", name, qtype);
             return;
         }
-        info!("match {} with {} {:?} record(s)", name, records.len(), qtype);
+        info!(
+            "match {} with {} {:?} record(s)",
+            name,
+            records.len(),
+            qtype
+        );
         trace!("{}", cmd);
         let t = Instant::now();
         if nft.run(cmd).is_err() {
@@ -122,7 +127,7 @@ fn main() {
         .get_one::<String>("socks-path")
         .expect("missing socks-path argument");
     let mut socks_path: AutoRemoveFile = socks_path.as_str().into();
-    
+
     let ruleset = matches
         .get_one::<String>("rules")
         .expect("missing rules file path");
