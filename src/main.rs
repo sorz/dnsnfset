@@ -125,7 +125,7 @@ fn main() {
                 .long("rules")
                 .short('f')
                 .help("Rules file")
-                .default_value("rules.conf"),
+                .default_value("rules.toml"),
         )
         .get_matches();
     let socks_path = matches

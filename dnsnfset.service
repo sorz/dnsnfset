@@ -7,7 +7,7 @@ Type=exec
 User=unbound
 RuntimeDirectory=dnsnfset
 Environment=RUST_LOG=dnsnfset=debug
-ExecStart=/opt/dnsnfset/dnsnfset -f rules.conf -s /run/dnsnfset/dnstap.sock
+ExecStart=/opt/dnsnfset/dnsnfset -f rules.toml -s /run/dnsnfset/dnstap.sock
 WorkingDirectory=/opt/dnsnfset
 
 AmbientCapabilities=CAP_NET_ADMIN

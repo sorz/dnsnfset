@@ -42,9 +42,9 @@ dnstap:
   dnstap-log-forwarder-response-messages: yes
 ```
 2. Create set(s) in nftables using `nft`.
-3. Edit `rules.conf` to specify which domain going to which set.
+3. Edit `rules.toml` to specify which domain going to which set.
 4. Run `dnsnfset --rules <FILE> --socks-path <UNIX-SOCK>`.
 
 ## Future works
 1. Handle CNAME properly.
-2. Better rule config syntax.
+

@@ -1,0 +1,19 @@
+[table_name.set_name]
+# set family: ip, ip6, inet
+family = "ip"
+
+# set data type: ipv4 or ipv6
+# optional if family is not inet 
+# type = "ipv4"
+
+domains = [
+    "google.com",
+]
+
+[filter.netflix]
+family = "inet"
+type = "ipv6"
+timeout = "1d"
+domains = [
+    "netflix.com",
+]
