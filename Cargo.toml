@@ -7,13 +7,13 @@ edition = "2018"
 [dependencies]
 libc = "0.2"
 log = "0.4"
-env_logger = "0.9"
+env_logger = "0.11"
 clap = "2.33"
-mnl = "0.2.0"
+mnl = "0.3"
 dns-parser = "0.8"
-protobuf = "2.18"
+protobuf = "2"
 fstrm = { git = "https://github.com/sorz/rust-fstrm/", rev = "5416fa0" }
 
 [build-dependencies]
-bindgen = "0.58"
-protobuf-codegen-pure = "2.18"
+bindgen = "0.72"
+protobuf-codegen-pure = "2.28"
