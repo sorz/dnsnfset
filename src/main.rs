@@ -81,7 +81,7 @@ fn handle_packet(pkt: DnsPacket, ruleset: &RuleSet, nft: &mut Nftables) {
         let mut cmd = String::new();
         for set in sets {
             for addr in records.iter() {
-                add_element(&mut cmd, &set, &name, &addr);
+                add_element(&mut cmd, &set, &name, addr);
             }
         }
         if cmd.is_empty() {
