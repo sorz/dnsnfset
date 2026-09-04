@@ -17,7 +17,8 @@ fn main() {
         .expect("Couldn't write bindings!");
 
     protobuf_codegen::CodeGen::new()
-        .input("dnstap.pb/dnstap.proto")
+        .include("dnstap.pb")
+        .input("dnstap.proto")
         .generate_and_compile()
         .expect("Couldn't generate dnstap protobuf");
 }

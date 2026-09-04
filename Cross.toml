@@ -8,5 +8,6 @@ env = { passthrough = [
 pre-build = [
     "dpkg --add-architecture arm64",
     "apt-get update",
-    "apt-get install --assume-yes libmnl-dev:arm64 libnftables-dev:arm64"
+    "apt-get install --assume-yes curl unzip libmnl-dev:arm64 libnftables-dev:arm64",
+    "PROTOC_ARCH=$(uname -m | sed 's/aarch64/aarch_64/') && curl -sSL https://github.com/protocolbuffers/protobuf/releases/download/v36.1/protoc-36.1-linux-${PROTOC_ARCH}.zip -o /tmp/protoc.zip && unzip -q /tmp/protoc.zip -d /usr/local && rm /tmp/protoc.zip"
 ]
