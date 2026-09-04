@@ -1,10 +1,11 @@
+use anyhow::{Context, Result};
 use clap::{Arg, Command};
 use dns_parser::{rdata::RData, Error as DnsError, Packet as DnsPacket, QueryType};
 use fstrm::FstrmReader;
 use log::{debug, info, trace, warn};
 use protobuf::prelude::*;
 use std::{
-    io::{self, Read, Result},
+    io::Read,
     net::IpAddr,
     os::unix::net::{UnixListener, UnixStream},
     sync::Arc,
@@ -23,17 +24,22 @@ use dnsnfset::{
 fn handle_stream(stream: UnixStream, ruleset: Arc<RuleSet>) -> Result<()> {
     info!("unbound connected");
     let reader = FstrmReader::<_, ()>::new(stream);
-    let mut reader = reader.accept()?.start()?;
+    let mut reader = reader
+        .accept()
+        .context("failed to accept FSTRM stream")?
+        .start()
+        .context("failed to start FSTRM reader")?;
     debug!("FSTRM handshake finish {:?}", reader.content_types());
 
     let mut nft = Nftables::new();
     let mut buf = Vec::new();
 
-    while let Some(mut frame) = reader.read_frame()? {
+    while let Some(mut frame) = reader.read_frame().context("failed to read FSTRM frame")? {
         buf.clear();
-        frame.read_to_end(&mut buf)?;
-        // FIXME: bubble up parse error
-        let dnstap = Dnstap::parse(&buf).map_err(|_| io::ErrorKind::InvalidData)?;
+        frame
+            .read_to_end(&mut buf)
+            .context("failed to read frame content")?;
+        let dnstap = Dnstap::parse(&buf).context("failed to parse dnstap message")?;
         let msg = dnstap.message();
         let resp = msg.response_message();
         trace!("got {:?} ({}B resp)", msg.r#type(), resp.len());
@@ -90,8 +96,8 @@ fn handle_packet(pkt: DnsPacket, ruleset: &RuleSet, nft: &mut Nftables) {
         );
         trace!("{}", cmd);
         let t = Instant::now();
-        if nft.run(cmd).is_err() {
-            warn!("fail to run nft cmd");
+        if let Err(err) = nft.run(cmd) {
+            warn!("fail to run nft cmd: {:#}", err);
         }
         debug!("{:?}", t.elapsed());
     }
@@ -107,7 +113,7 @@ fn add_element(buf: &mut String, set: &Set, name: &str, addr: &IpAddr) {
     }
 }
 
-fn main() {
+fn main() -> Result<()> {
     env_logger::builder().format_timestamp(None).init();
     let matches = Command::new("dnsnfset")
         .version(env!("CARGO_PKG_VERSION"))
@@ -133,14 +139,16 @@ fn main() {
         .expect("missing socks-path argument");
     let mut socks_path: AutoRemoveFile = socks_path.as_str().into();
 
-    let ruleset = matches
+    let rules_file = matches
         .get_one::<String>("rules")
         .expect("missing rules file path");
-    let ruleset = RuleSet::from_file(ruleset).expect("fail to load rules");
+    let ruleset = RuleSet::from_file(rules_file)
+        .with_context(|| format!("fail to load rules from {}", rules_file))?;
     let ruleset = Arc::new(ruleset);
     info!("{} rules loaded", ruleset.len());
 
-    let listener = UnixListener::bind(&socks_path).expect("fail to bind socket");
+    let listener = UnixListener::bind(&socks_path)
+        .with_context(|| format!("fail to bind socket on {}", socks_path))?;
     info!("listen on {}", socks_path);
     socks_path.set_auto_remove(true);
 
@@ -150,10 +158,11 @@ fn main() {
                 let rules = ruleset.clone();
                 thread::spawn(move || match handle_stream(stream, rules) {
                     Ok(_) => info!("unbound disconnected"),
-                    Err(err) => warn!("error on thread: {}", err),
+                    Err(err) => warn!("error on thread: {:#}", err),
                 });
             }
-            Err(err) => panic!("fail to connect: {}", err),
+            Err(err) => warn!("fail to accept connection: {:#}", err),
         }
     }
+    Ok(())
 }

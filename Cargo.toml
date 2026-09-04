@@ -15,6 +15,7 @@ protobuf = "4.36.1-release"
 fstrm = { git = "https://github.com/sorz/rust-fstrm/", rev = "5416fa0" }
 serde = { version = "1.0", features = ["derive"] }
 toml = "1"
+anyhow = "1"
 
 [build-dependencies]
 bindgen = "0.72"

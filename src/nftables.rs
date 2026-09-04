@@ -1,6 +1,7 @@
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
+use anyhow::{bail, Context, Result};
 use std::ffi::CString;
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
@@ -15,11 +16,11 @@ impl Nftables {
         Self { ctx }
     }
 
-    pub fn run(&mut self, cmd: String) -> Result<(), ()> {
-        let cmd = CString::new(cmd).map_err(|_| ())?;
+    pub fn run(&mut self, cmd: String) -> Result<()> {
+        let cmd = CString::new(cmd).context("nftables command contains null byte")?;
         match unsafe { nft_run_cmd_from_buffer(self.ctx, cmd.as_ptr()) } {
             0 => Ok(()),
-            _ => Err(()),
+            ret => bail!("nft_run_cmd_from_buffer failed with return code {}", ret),
         }
     }
 }

@@ -1,6 +1,7 @@
+use anyhow::{bail, Context, Result};
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::{self, Read};
+use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -68,17 +69,21 @@ fn normalize_domain(domain: &str) -> Box<[u8]> {
 }
 
 impl RuleSet {
-    pub fn from_file<P: AsRef<Path>>(path: P) -> io::Result<Self> {
-        let mut file = File::open(path)?;
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let path_ref = path.as_ref();
+        let mut file = File::open(path_ref)
+            .with_context(|| format!("failed to open rules file {}", path_ref.display()))?;
         let mut content = String::new();
-        file.read_to_string(&mut content)?;
+        file.read_to_string(&mut content)
+            .with_context(|| format!("failed to read rules file {}", path_ref.display()))?;
         Self::from_str(&content)
+            .with_context(|| format!("failed to parse rules in {}", path_ref.display()))
     }
 
     #[allow(clippy::should_implement_trait)]
-    pub fn from_str(s: &str) -> io::Result<Self> {
+    pub fn from_str(s: &str) -> Result<Self> {
         let tables: HashMap<String, HashMap<String, OneOrMany<SetConfig>>> =
-            toml::from_str(s).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
+            toml::from_str(s).context("failed to parse TOML configuration")?;
 
         let mut ruleset = RuleSet::default();
         for (table_key, sets) in tables {
@@ -98,23 +103,12 @@ impl RuleSet {
                         match config.family {
                             Some(NftFamily::Ip) => elem_types.push(NftSetElemType::Ipv4Addr),
                             Some(NftFamily::Ip6) => elem_types.push(NftSetElemType::Ipv6Addr),
-                            Some(NftFamily::Inet) => {
-                                return Err(io::Error::new(
-                                    io::ErrorKind::InvalidData,
-                                    format!(
-                                        "missing 'type' or 'types' in [{}.{}]: for inet family, element type must be specified",
-                                        table, set_name
-                                    ),
-                                ));
-                            }
-                            None => {
-                                return Err(io::Error::new(
-                                    io::ErrorKind::InvalidData,
-                                    format!(
-                                        "missing 'type' or 'types' in [{}.{}]",
-                                        table, set_name
-                                    ),
-                                ));
+                            Some(NftFamily::Inet) | None => {
+                                bail!(
+                                    "missing 'type' or 'types' in [{}.{}]: for inet family",
+                                    table,
+                                    set_name
+                                );
                             }
                         }
                     }
@@ -124,10 +118,7 @@ impl RuleSet {
                         domain_list.push(d);
                     }
                     if domain_list.is_empty() {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            format!("missing 'domain' or 'domains' in [{}.{}]", table, set_name),
-                        ));
+                        bail!("missing 'domain' or 'domains' in [{}.{}]", table, set_name);
                     }
 
                     let timeout = config.timeout.map(|t| t.into_boxed_str());
