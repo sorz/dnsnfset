@@ -1,4 +1,4 @@
-use clap::{App, Arg};
+use clap::{Arg, Command};
 use dns_parser::{rdata::RData, Error as DnsError, Packet as DnsPacket, QueryType};
 use fstrm::FstrmReader;
 use log::{debug, info, trace, warn};
@@ -99,34 +99,34 @@ fn add_element(buf: &mut String, set: &Set, name: &str, addr: &IpAddr) {
 
 fn main() {
     env_logger::builder().format_timestamp(None).init();
-    let matches = App::new("dnsnfset")
+    let matches = Command::new("dnsnfset")
         .version(env!("CARGO_PKG_VERSION"))
         .author("Shell Chen <me@sorz.org>")
         .about("Add IPs in DNS response to nftables sets")
         .arg(
-            Arg::with_name("socks-path")
+            Arg::new("socks-path")
                 .long("socks-path")
-                .short("s")
+                .short('s')
                 .help("UNIX domain socket to bind on")
-                .takes_value(true)
                 .default_value("/var/run/dnsnfset/dnstap.sock"),
         )
         .arg(
-            Arg::with_name("rules")
+            Arg::new("rules")
                 .long("rules")
-                .short("f")
+                .short('f')
                 .help("Rules file")
-                .takes_value(true)
                 .default_value("rules.conf"),
         )
         .get_matches();
-    let mut socks_path: AutoRemoveFile = matches
-        .value_of("socks-path")
-        .expect("missing socks-path argument")
-        .into();
-    let file = matches.value_of("rules").expect("missing rules file path");
-
-    let ruleset = RuleSet::from_file(file).expect("fail to load rules");
+    let socks_path = matches
+        .get_one::<String>("socks-path")
+        .expect("missing socks-path argument");
+    let mut socks_path: AutoRemoveFile = socks_path.as_str().into();
+    
+    let ruleset = matches
+        .get_one::<String>("rules")
+        .expect("missing rules file path");
+    let ruleset = RuleSet::from_file(ruleset).expect("fail to load rules");
     let ruleset = Arc::new(ruleset);
     info!("{} rules loaded", ruleset.len());
 
