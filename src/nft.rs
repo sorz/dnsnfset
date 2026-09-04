@@ -4,6 +4,8 @@ use std::fmt::{self, Display, Formatter};
 use std::net::IpAddr;
 use std::str::FromStr;
 
+use std::time::Duration;
+
 pub trait NftCommand {
     fn add_element(
         &mut self,
@@ -11,7 +13,22 @@ pub trait NftCommand {
         table: &str,
         set: &str,
         addr: &IpAddr,
-        timeout: &Option<Box<str>>,
+        timeout: Option<Duration>,
+    );
+    fn delete_element(
+        &mut self,
+        family: Option<NftFamily>,
+        table: &str,
+        set: &str,
+        addr: &IpAddr,
+    );
+    fn refresh_element(
+        &mut self,
+        family: Option<NftFamily>,
+        table: &str,
+        set: &str,
+        addr: &IpAddr,
+        timeout: Option<Duration>,
     );
 }
 
@@ -76,7 +93,7 @@ impl NftCommand for String {
         table: &str,
         set: &str,
         addr: &IpAddr,
-        timeout: &Option<Box<str>>,
+        timeout: Option<Duration>,
     ) {
         self.push_str("add element ");
         if let Some(family) = family {
@@ -84,8 +101,34 @@ impl NftCommand for String {
         }
         write!(self, "{} {} {{ {} ", table, set, addr).unwrap();
         if let Some(timeout) = timeout {
-            write!(self, "timeout {} ", timeout).unwrap();
+            write!(self, "timeout {}s ", timeout.as_secs()).unwrap();
         }
         self.push_str("}; ");
+    }
+
+    fn delete_element(
+        &mut self,
+        family: Option<NftFamily>,
+        table: &str,
+        set: &str,
+        addr: &IpAddr,
+    ) {
+        self.push_str("delete element ");
+        if let Some(family) = family {
+            write!(self, "{} ", family).unwrap();
+        }
+        write!(self, "{} {} {{ {} }}; ", table, set, addr).unwrap();
+    }
+
+    fn refresh_element(
+        &mut self,
+        family: Option<NftFamily>,
+        table: &str,
+        set: &str,
+        addr: &IpAddr,
+        timeout: Option<Duration>,
+    ) {
+        self.delete_element(family, table, set, addr);
+        self.add_element(family, table, set, addr, timeout);
     }
 }

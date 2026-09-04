@@ -5,7 +5,8 @@ fn main() {
     println!("cargo:rustc-link-lib=nftables");
     let bindings = bindgen::Builder::default()
         .allowlist_function("nft_run_cmd_from_buffer")
-        .allowlist_function("nft_ctx_(new|free)")
+        .allowlist_function("nft_ctx_.*")
+        .allowlist_var("NFT_CTX_.*")
         .allowlist_type("nft_ctx")
         .header("wrapper.h")
         .generate()

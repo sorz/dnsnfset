@@ -17,11 +17,16 @@ use dnsnfset::{
     dnstap::Dnstap,
     nft::{NftCommand, NftSetElemType},
     nftables::Nftables,
-    rule::{RuleSet, Set},
+    rule::RuleSet,
     socks::AutoRemoveFile,
+    state::{SetState, UpdateAction},
 };
 
-fn handle_stream(stream: UnixStream, ruleset: Arc<RuleSet>) -> Result<()> {
+fn handle_stream(
+    stream: UnixStream,
+    ruleset: Arc<RuleSet>,
+    state: Arc<SetState>,
+) -> Result<()> {
     info!("unbound connected");
     let reader = FstrmReader::<_, ()>::new(stream);
     let mut reader = reader
@@ -49,13 +54,18 @@ fn handle_stream(stream: UnixStream, ruleset: Arc<RuleSet>) -> Result<()> {
         match DnsPacket::parse(resp) {
             Err(DnsError::InvalidQueryType(_)) => (),
             Err(err) => debug!("fail to parse dns packet: {}", err),
-            Ok(packet) => handle_packet(packet, &ruleset, &mut nft),
+            Ok(packet) => handle_packet(packet, &ruleset, &state, &mut nft),
         }
     }
     Ok(())
 }
 
-fn handle_packet(pkt: DnsPacket, ruleset: &RuleSet, nft: &mut Nftables) {
+fn handle_packet(
+    pkt: DnsPacket,
+    ruleset: &RuleSet,
+    state: &SetState,
+    nft: &mut Nftables,
+) {
     let qtype_qname = pkt
         .questions
         .iter()
@@ -79,37 +89,70 @@ fn handle_packet(pkt: DnsPacket, ruleset: &RuleSet, nft: &mut Nftables) {
             .collect();
 
         let mut cmd = String::new();
+        let mut to_record = Vec::new();
+
         for set in sets {
             for addr in records.iter() {
-                add_element(&mut cmd, &set, &name, addr);
+                match (set.elem_type, addr) {
+                    (NftSetElemType::Ipv4Addr, IpAddr::V6(_))
+                    | (NftSetElemType::Ipv6Addr, IpAddr::V4(_)) => (),
+                    _ => match state.check_update(&set, addr) {
+                        UpdateAction::Add => {
+                            debug!("  add {} {:?} to {}", name, addr, set.set_name);
+                            cmd.add_element(
+                                set.family,
+                                &set.table,
+                                &set.set_name,
+                                addr,
+                                set.timeout,
+                            );
+                            to_record.push((set.clone(), *addr));
+                        }
+                        UpdateAction::Refresh => {
+                            debug!("  refresh {} {:?} in {}", name, addr, set.set_name);
+                            cmd.refresh_element(
+                                set.family,
+                                &set.table,
+                                &set.set_name,
+                                addr,
+                                set.timeout,
+                            );
+                            to_record.push((set.clone(), *addr));
+                        }
+                        UpdateAction::Skip => {
+                            trace!(
+                                "  skip {} {:?} in {} (lifetime > 2/3)",
+                                name, addr, set.set_name
+                            );
+                        }
+                    },
+                }
             }
         }
         if cmd.is_empty() {
-            debug!("match {} with zero {:?} record", name, qtype);
+            debug!("match {} with zero {:?} record to update", name, qtype);
             return;
         }
         info!(
-            "match {} with {} {:?} record(s)",
+            "match {} with {} {:?} record(s) ({} to add)",
             name,
             records.len(),
-            qtype
+            qtype,
+            to_record.len(),
         );
         trace!("{}", cmd);
         let t = Instant::now();
-        if let Err(err) = nft.run(cmd) {
-            warn!("fail to run nft cmd: {:#}", err);
+        match nft.run(cmd) {
+            Ok(()) => {
+                for (set, addr) in to_record {
+                    state.record_added(&set, addr);
+                }
+            }
+            Err(err) => {
+                warn!("fail to run nft cmd: {:#}", err);
+            }
         }
         debug!("{:?}", t.elapsed());
-    }
-}
-
-fn add_element(buf: &mut String, set: &Set, name: &str, addr: &IpAddr) {
-    match (set.elem_type, addr) {
-        (NftSetElemType::Ipv4Addr, IpAddr::V6(_)) | (NftSetElemType::Ipv6Addr, IpAddr::V4(_)) => (),
-        _ => {
-            debug!("  add {} {:?} to {}", name, addr, set.set_name);
-            buf.add_element(set.family, &set.table, &set.set_name, addr, &set.timeout);
-        }
     }
 }
 
@@ -147,6 +190,11 @@ fn main() -> Result<()> {
     let ruleset = Arc::new(ruleset);
     info!("{} rules loaded", ruleset.len());
 
+    let mut nft = Nftables::new();
+    let state = Arc::new(SetState::new());
+    info!("syncing existing set elements from nftables...");
+    state.sync_from_nft(&mut nft, &ruleset);
+
     let listener = UnixListener::bind(&socks_path)
         .with_context(|| format!("fail to bind socket on {}", socks_path))?;
     info!("listen on {}", socks_path);
@@ -156,7 +204,8 @@ fn main() -> Result<()> {
         match stream {
             Ok(stream) => {
                 let rules = ruleset.clone();
-                thread::spawn(move || match handle_stream(stream, rules) {
+                let state = state.clone();
+                thread::spawn(move || match handle_stream(stream, rules, state) {
                     Ok(_) => info!("unbound disconnected"),
                     Err(err) => warn!("error on thread: {:#}", err),
                 });

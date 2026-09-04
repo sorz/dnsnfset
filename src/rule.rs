@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde::Deserialize;
 
@@ -21,7 +22,7 @@ pub struct Set {
     pub table: Box<str>,
     pub set_name: Box<str>,
     pub elem_type: NftSetElemType,
-    pub timeout: Option<Box<str>>,
+    pub timeout: Option<Duration>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -90,14 +91,29 @@ impl RuleSet {
                     },
                 };
 
-                let timeout = config.timeout.map(|t| t.into_boxed_str());
+                let timeout = config
+                    .timeout
+                    .as_deref()
+                    .map(|s| -> Result<Duration> {
+                        let dur = fundu::DurationParser::with_all_time_units().parse(s)?;
+                        Ok(dur.try_into()?)
+                    })
+                    .transpose()
+                    .with_context(|| {
+                        format!(
+                            "invalid timeout '{}' in [{}.{}]",
+                            config.timeout.as_deref().unwrap_or(""),
+                            table,
+                            set_name
+                        )
+                    })?;
 
                 let set = Set {
                     family: config.family,
                     table: table.clone().into_boxed_str(),
                     set_name: set_name.clone().into_boxed_str(),
                     elem_type,
-                    timeout: timeout.clone(),
+                    timeout,
                 };
 
                 let set_arc = match ruleset.sets.get(&set) {
@@ -120,6 +136,10 @@ impl RuleSet {
             }
         }
         Ok(ruleset)
+    }
+
+    pub fn sets(&self) -> &HashSet<Arc<Set>> {
+        &self.sets
     }
 
     pub fn match_all(&self, domain: &str) -> Vec<Arc<Set>> {
@@ -230,7 +250,7 @@ mod tests {
         assert_eq!("netflix", &*nf_matches[0].set_name);
         assert_eq!(Some(NftFamily::Ip6), nf_matches[0].family);
         assert_eq!(NftSetElemType::Ipv6Addr, nf_matches[0].elem_type);
-        assert_eq!(Some("2h".into()), nf_matches[0].timeout);
+        assert_eq!(Some(Duration::from_secs(7200)), nf_matches[0].timeout);
     }
 
     #[test]
@@ -292,5 +312,52 @@ mod tests {
         domians = ["example.com"]
         "#;
         assert!(RuleSet::from_str(toml_typo).is_err());
+    }
+
+    #[test]
+    fn test_timeout_formats() {
+        let toml_data = r#"
+        [filter.set_1d]
+        family = "ip"
+        timeout = "1d"
+        domains = ["d.com"]
+
+        [filter.set_2h]
+        family = "ip"
+        timeout = "2h"
+        domains = ["h.com"]
+
+        [filter.set_str_num]
+        family = "ip"
+        timeout = "3600"
+        domains = ["s1.com"]
+
+        [filter.set_no_timeout]
+        family = "ip"
+        domains = ["none.com"]
+        "#;
+        let ruleset = RuleSet::from_str(toml_data).unwrap();
+        let m_1d = ruleset.match_all("d.com");
+        assert_eq!(m_1d[0].timeout, Some(Duration::from_secs(86400)));
+
+        let m_2h = ruleset.match_all("h.com");
+        assert_eq!(m_2h[0].timeout, Some(Duration::from_secs(7200)));
+
+        let m_s1 = ruleset.match_all("s1.com");
+        assert_eq!(m_s1[0].timeout, Some(Duration::from_secs(3600)));
+
+        let m_none = ruleset.match_all("none.com");
+        assert_eq!(m_none[0].timeout, None);
+    }
+
+    #[test]
+    fn test_invalid_timeout_fails() {
+        let toml_invalid = r#"
+        [nat.bad_timeout]
+        family = "ip"
+        timeout = "invalid_foo"
+        domains = ["bad.com"]
+        "#;
+        assert!(RuleSet::from_str(toml_invalid).is_err());
     }
 }
