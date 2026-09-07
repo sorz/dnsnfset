@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
-use dns_parser::{rdata::RData, Error as DnsError, Packet as DnsPacket, QueryType};
 use fstrm::FstrmReader;
 use log::{debug, info, trace, warn};
 use protobuf::prelude::*;
+use simple_dns::{rdata::RData, Packet as DnsPacket, QTYPE, TYPE};
 use std::{
     io::Read,
     net::IpAddr,
@@ -22,11 +22,7 @@ use dnsnfset::{
     state::{SetState, UpdateAction},
 };
 
-fn handle_stream(
-    stream: UnixStream,
-    ruleset: Arc<RuleSet>,
-    state: Arc<SetState>,
-) -> Result<()> {
+fn handle_stream(stream: UnixStream, ruleset: Arc<RuleSet>, state: Arc<SetState>) -> Result<()> {
     info!("unbound connected");
     let reader = FstrmReader::<_, ()>::new(stream);
     let mut reader = reader
@@ -52,7 +48,6 @@ fn handle_stream(
             continue;
         }
         match DnsPacket::parse(resp) {
-            Err(DnsError::InvalidQueryType(_)) => (),
             Err(err) => debug!("fail to parse dns packet: {}", err),
             Ok(packet) => handle_packet(packet, &ruleset, &state, &mut nft),
         }
@@ -60,16 +55,11 @@ fn handle_stream(
     Ok(())
 }
 
-fn handle_packet(
-    pkt: DnsPacket,
-    ruleset: &RuleSet,
-    state: &SetState,
-    nft: &mut Nftables,
-) {
+fn handle_packet(pkt: DnsPacket, ruleset: &RuleSet, state: &SetState, nft: &mut Nftables) {
     let qtype_qname = pkt
         .questions
         .iter()
-        .find(|q| matches!(q.qtype, QueryType::A | QueryType::AAAA))
+        .find(|q| matches!(q.qtype, QTYPE::TYPE(TYPE::A | TYPE::AAAA)))
         .map(|q| (q.qtype, q.qname.to_string()));
     trace!("name {:?}", qtype_qname);
 
@@ -81,9 +71,9 @@ fn handle_packet(
         let records: Vec<_> = pkt
             .answers
             .iter()
-            .filter_map(|record| match record.data {
-                RData::A(addr) => Some(IpAddr::V4(addr.0)),
-                RData::AAAA(addr) => Some(IpAddr::V6(addr.0)),
+            .filter_map(|record| match &record.rdata {
+                RData::A(addr) => Some(IpAddr::V4(addr.address.into())),
+                RData::AAAA(addr) => Some(IpAddr::V6(addr.address.into())),
                 _ => None,
             })
             .collect();
@@ -122,7 +112,9 @@ fn handle_packet(
                         UpdateAction::Skip => {
                             trace!(
                                 "  skip {} {:?} in {} (lifetime > 2/3)",
-                                name, addr, set.set_name
+                                name,
+                                addr,
+                                set.set_name
                             );
                         }
                     },
@@ -214,4 +206,75 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use simple_dns::{
+        rdata::{A, AAAA},
+        Name, Question, ResourceRecord, CLASS,
+    };
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    #[test]
+    fn test_parse_and_extract_ips() {
+        let mut packet = DnsPacket::new_reply(42);
+        packet.questions.push(Question::new(
+            Name::new("example.com").unwrap(),
+            QTYPE::TYPE(TYPE::A),
+            CLASS::IN.into(),
+            false,
+        ));
+        packet.answers.push(ResourceRecord::new(
+            Name::new("example.com").unwrap(),
+            CLASS::IN,
+            300,
+            RData::A(A {
+                address: Ipv4Addr::new(93, 184, 216, 34).into(),
+            }),
+        ));
+        packet.answers.push(ResourceRecord::new(
+            Name::new("example.com").unwrap(),
+            CLASS::IN,
+            300,
+            RData::AAAA(AAAA {
+                address: Ipv6Addr::new(0x2606, 0x2800, 0x220, 0x1, 0x248, 0x1893, 0x25c8, 0x1946)
+                    .into(),
+            }),
+        ));
+
+        let wire_bytes = packet.build_bytes_vec_compressed().unwrap();
+        let parsed = DnsPacket::parse(&wire_bytes).unwrap();
+
+        let question = parsed
+            .questions
+            .iter()
+            .find(|q| matches!(q.qtype, QTYPE::TYPE(TYPE::A | TYPE::AAAA)))
+            .map(|q| (q.qtype, q.qname.to_string()));
+        assert_eq!(
+            question,
+            Some((QTYPE::TYPE(TYPE::A), "example.com".to_string()))
+        );
+
+        let records: Vec<IpAddr> = parsed
+            .answers
+            .iter()
+            .filter_map(|record| match &record.rdata {
+                RData::A(addr) => Some(IpAddr::V4(addr.address.into())),
+                RData::AAAA(addr) => Some(IpAddr::V6(addr.address.into())),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(
+            records,
+            vec![
+                IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)),
+                IpAddr::V6(Ipv6Addr::new(
+                    0x2606, 0x2800, 0x220, 0x1, 0x248, 0x1893, 0x25c8, 0x1946
+                )),
+            ]
+        );
+    }
 }
