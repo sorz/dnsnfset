@@ -79,7 +79,7 @@ impl SetState {
         match set.timeout {
             None => {
                 match expires_at {
-                    None => UpdateAction::Skip, // Already permanent in nftables
+                    None => UpdateAction::Skip,       // Already permanent in nftables
                     Some(_) => UpdateAction::Refresh, // Was temporary in nftables, refresh to permanent
                 }
             }

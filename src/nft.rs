@@ -15,13 +15,7 @@ pub trait NftCommand {
         addr: &IpAddr,
         timeout: Option<Duration>,
     );
-    fn delete_element(
-        &mut self,
-        family: Option<NftFamily>,
-        table: &str,
-        set: &str,
-        addr: &IpAddr,
-    );
+    fn delete_element(&mut self, family: Option<NftFamily>, table: &str, set: &str, addr: &IpAddr);
     fn refresh_element(
         &mut self,
         family: Option<NftFamily>,
@@ -106,13 +100,7 @@ impl NftCommand for String {
         self.push_str("}; ");
     }
 
-    fn delete_element(
-        &mut self,
-        family: Option<NftFamily>,
-        table: &str,
-        set: &str,
-        addr: &IpAddr,
-    ) {
+    fn delete_element(&mut self, family: Option<NftFamily>, table: &str, set: &str, addr: &IpAddr) {
         self.push_str("delete element ");
         if let Some(family) = family {
             write!(self, "{} ", family).unwrap();
