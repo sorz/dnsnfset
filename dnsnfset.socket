@@ -1,0 +1,10 @@
+[Unit]
+Description=dnsnfset dnstap receiver
+
+[Socket]
+ListenStream=/run/dnsnfset/dnstap.sock
+SocketUser=unbound
+SocketMode=0220
+
+[Install]
+WantedBy=sockets.target

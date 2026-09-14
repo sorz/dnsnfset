@@ -9,7 +9,10 @@ use simple_dns::{rdata::RData, Packet as DnsPacket, QTYPE, TYPE};
 use std::{
     io::{self, Read},
     net::IpAddr,
-    os::unix::net::{UnixListener, UnixStream},
+    os::unix::{
+        io::FromRawFd,
+        net::{UnixListener, UnixStream},
+    },
     sync::{Arc, RwLock},
     thread,
     time::Instant,
@@ -173,6 +176,21 @@ fn reload_rules_and_sync(
     Ok(())
 }
 
+fn get_listener(socks_path: &mut AutoRemoveFile) -> Result<UnixListener> {
+    let mut fds = sd_notify::listen_fds().context("failed to check systemd listen fds")?;
+    if let Some(fd) = fds.next() {
+        info!("using systemd socket activation (fd {})", fd);
+        // Safety: fds provided by systemd are always owned & opened.
+        Ok(unsafe { UnixListener::from_raw_fd(fd) })
+    } else {
+        let listener = UnixListener::bind(socks_path.as_ref())
+            .with_context(|| format!("fail to bind socket on {}", socks_path))?;
+        info!("listen on {}", socks_path);
+        socks_path.set_auto_remove(true);
+        Ok(listener)
+    }
+}
+
 fn main() -> Result<()> {
     env_logger::builder().format_timestamp(None).init();
     let matches = Command::new("dnsnfset")
@@ -243,10 +261,7 @@ fn main() -> Result<()> {
         }
     });
 
-    let listener = UnixListener::bind(&socks_path)
-        .with_context(|| format!("fail to bind socket on {}", socks_path))?;
-    info!("listen on {}", socks_path);
-    socks_path.set_auto_remove(true);
+    let listener = get_listener(&mut socks_path)?;
 
     if let Err(err) = sd_notify::notify(&[NotifyState::Ready]) {
         debug!("failed to notify systemd: {:#}", err);
@@ -411,5 +426,50 @@ mod tests {
 
         // Clean up
         let _ = std::fs::remove_file(&test_file);
+    }
+
+    #[test]
+    fn test_get_listener_fallback_to_bind() {
+        let temp_dir = std::env::temp_dir();
+        let sock_path = temp_dir.join(format!(
+            "dnsnfset-test-sock-{}-{}.sock",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut auto_remove_sock: AutoRemoveFile = sock_path.to_str().unwrap().into();
+
+        let listener = get_listener(&mut auto_remove_sock).unwrap();
+        assert!(sock_path.exists());
+        drop(listener);
+        drop(auto_remove_sock);
+        assert!(!sock_path.exists());
+    }
+
+    #[test]
+    fn test_listener_from_raw_fd() {
+        use std::os::unix::io::IntoRawFd;
+
+        let temp_dir = std::env::temp_dir();
+        let sock_path = temp_dir.join(format!(
+            "dnsnfset-test-rawfd-{}-{}.sock",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let original = UnixListener::bind(&sock_path).unwrap();
+        let raw = original.into_raw_fd();
+        let listener = unsafe { UnixListener::from_raw_fd(raw) };
+
+        let client = UnixStream::connect(&sock_path).unwrap();
+        let (server, _) = listener.accept().unwrap();
+        drop(client);
+        drop(server);
+        drop(listener);
+        let _ = std::fs::remove_file(&sock_path);
     }
 }

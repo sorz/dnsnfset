@@ -32,7 +32,7 @@ impl<'a> Drop for AutoRemoveFile<'a> {
     }
 }
 
-impl<'a> AsRef<Path> for &'a AutoRemoveFile<'a> {
+impl AsRef<Path> for AutoRemoveFile<'_> {
     fn as_ref(&self) -> &Path {
         self.path.as_ref()
     }
