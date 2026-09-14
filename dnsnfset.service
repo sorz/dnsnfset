@@ -3,12 +3,11 @@ Description=Add IP addresses in DNS replies into nftables sets
 After=network.target
 
 [Service]
-Type=exec
+Type=notify-reload
 User=unbound
 RuntimeDirectory=dnsnfset
 Environment=RUST_LOG=dnsnfset=debug
 ExecStart=/opt/dnsnfset/dnsnfset -f rules.toml -s /run/dnsnfset/dnstap.sock
-ExecReload=/usr/bin/kill -HUP $MAINPID
 WorkingDirectory=/opt/dnsnfset
 
 AmbientCapabilities=CAP_NET_ADMIN

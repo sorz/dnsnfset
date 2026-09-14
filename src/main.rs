@@ -3,6 +3,7 @@ use clap::{Arg, Command};
 use fstrm::FstrmReader;
 use log::{debug, info, trace, warn};
 use protobuf::prelude::*;
+use sd_notify::NotifyState;
 use signal_hook::{consts::SIGHUP, iterator::Signals};
 use simple_dns::{rdata::RData, Packet as DnsPacket, QTYPE, TYPE};
 use std::{
@@ -219,7 +220,13 @@ fn main() -> Result<()> {
         let mut nft = Nftables::new();
         for sig in signals.forever() {
             if sig == SIGHUP {
-                info!("received SIGHUP, reloading rules and syncing nftables sets...");
+                info!("received SIGHUP, reloading...");
+                if let Err(err) = NotifyState::monotonic_usec_now()
+                    .and_then(|now| sd_notify::notify(&[NotifyState::Reloading, now]))
+                {
+                    debug!("failed to notify systemd: {:#}", err);
+                }
+
                 if let Err(err) = reload_rules_and_sync(
                     &signal_rules_path,
                     &signal_ruleset,
@@ -227,6 +234,10 @@ fn main() -> Result<()> {
                     &mut nft,
                 ) {
                     warn!("failed to reload: {:#}", err);
+                }
+
+                if let Err(err) = sd_notify::notify(&[NotifyState::Ready]) {
+                    debug!("failed to notify systemd: {:#}", err);
                 }
             }
         }
@@ -236,6 +247,10 @@ fn main() -> Result<()> {
         .with_context(|| format!("fail to bind socket on {}", socks_path))?;
     info!("listen on {}", socks_path);
     socks_path.set_auto_remove(true);
+
+    if let Err(err) = sd_notify::notify(&[NotifyState::Ready]) {
+        debug!("failed to notify systemd: {:#}", err);
+    }
 
     for stream in listener.incoming() {
         match stream {
