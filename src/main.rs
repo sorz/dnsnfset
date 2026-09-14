@@ -3,12 +3,13 @@ use clap::{Arg, Command};
 use fstrm::FstrmReader;
 use log::{debug, info, trace, warn};
 use protobuf::prelude::*;
+use signal_hook::{consts::SIGHUP, iterator::Signals};
 use simple_dns::{rdata::RData, Packet as DnsPacket, QTYPE, TYPE};
 use std::{
-    io::Read,
+    io::{self, Read},
     net::IpAddr,
     os::unix::net::{UnixListener, UnixStream},
-    sync::Arc,
+    sync::{Arc, RwLock},
     thread,
     time::Instant,
 };
@@ -22,7 +23,11 @@ use dnsnfset::{
     state::{SetState, UpdateAction},
 };
 
-fn handle_stream(stream: UnixStream, ruleset: Arc<RuleSet>, state: Arc<SetState>) -> Result<()> {
+fn handle_stream(
+    stream: UnixStream,
+    ruleset: Arc<RwLock<Arc<RuleSet>>>,
+    state: Arc<SetState>,
+) -> Result<()> {
     info!("unbound connected");
     let reader = FstrmReader::<_, ()>::new(stream);
     let mut reader = reader
@@ -49,7 +54,10 @@ fn handle_stream(stream: UnixStream, ruleset: Arc<RuleSet>, state: Arc<SetState>
         }
         match DnsPacket::parse(resp) {
             Err(err) => debug!("fail to parse dns packet: {}", err),
-            Ok(packet) => handle_packet(packet, &ruleset, &state, &mut nft),
+            Ok(packet) => {
+                let ruleset = ruleset.read().unwrap().clone();
+                handle_packet(packet, &ruleset, &state, &mut nft);
+            }
         }
     }
     Ok(())
@@ -148,6 +156,22 @@ fn handle_packet(pkt: DnsPacket, ruleset: &RuleSet, state: &SetState, nft: &mut 
     }
 }
 
+fn reload_rules_and_sync(
+    rules_path: &str,
+    ruleset: &RwLock<Arc<RuleSet>>,
+    state: &SetState,
+    nft: &mut Nftables,
+) -> Result<()> {
+    let new_ruleset = RuleSet::from_file(rules_path)
+        .with_context(|| format!("fail to load rules from {}", rules_path))?;
+    info!("{} rules loaded from {}", new_ruleset.len(), rules_path);
+    info!("syncing existing set elements from nftables...");
+    state.sync_from_nft(nft, &new_ruleset);
+    *ruleset.write().unwrap() = Arc::new(new_ruleset);
+    info!("reload completed successfully");
+    Ok(())
+}
+
 fn main() -> Result<()> {
     env_logger::builder().format_timestamp(None).init();
     let matches = Command::new("dnsnfset")
@@ -179,13 +203,34 @@ fn main() -> Result<()> {
         .expect("missing rules file path");
     let ruleset = RuleSet::from_file(rules_file)
         .with_context(|| format!("fail to load rules from {}", rules_file))?;
-    let ruleset = Arc::new(ruleset);
-    info!("{} rules loaded", ruleset.len());
+    let ruleset = Arc::new(RwLock::new(Arc::new(ruleset)));
+    info!("{} rules loaded", ruleset.read().unwrap().len());
 
     let mut nft = Nftables::new();
     let state = Arc::new(SetState::new());
     info!("syncing existing set elements from nftables...");
-    state.sync_from_nft(&mut nft, &ruleset);
+    state.sync_from_nft(&mut nft, &ruleset.read().unwrap());
+
+    let mut signals = Signals::new([SIGHUP]).context("failed to register SIGHUP signal handler")?;
+    let signal_ruleset = ruleset.clone();
+    let signal_state = state.clone();
+    let signal_rules_path = rules_file.clone();
+    thread::spawn(move || {
+        let mut nft = Nftables::new();
+        for sig in signals.forever() {
+            if sig == SIGHUP {
+                info!("received SIGHUP, reloading rules and syncing nftables sets...");
+                if let Err(err) = reload_rules_and_sync(
+                    &signal_rules_path,
+                    &signal_ruleset,
+                    &signal_state,
+                    &mut nft,
+                ) {
+                    warn!("failed to reload: {:#}", err);
+                }
+            }
+        }
+    });
 
     let listener = UnixListener::bind(&socks_path)
         .with_context(|| format!("fail to bind socket on {}", socks_path))?;
@@ -202,6 +247,7 @@ fn main() -> Result<()> {
                     Err(err) => warn!("error on thread: {:#}", err),
                 });
             }
+            Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
             Err(err) => warn!("fail to accept connection: {:#}", err),
         }
     }
@@ -276,5 +322,79 @@ mod tests {
                 )),
             ]
         );
+    }
+
+    #[test]
+    fn test_reload_rules_and_sync() {
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join(format!(
+            "dnsnfset-test-rules-{}-{}.toml",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+
+        let initial_rules = r#"
+        [nat.whitelist]
+        family = "ip"
+        type = "ipv4"
+        domains = ["test1.example.com"]
+        "#;
+        std::fs::write(&test_file, initial_rules).unwrap();
+
+        let ruleset = RuleSet::from_file(&test_file).unwrap();
+        assert_eq!(ruleset.len(), 1);
+        let shared_ruleset = Arc::new(RwLock::new(Arc::new(ruleset)));
+        let state = SetState::new();
+        let mut nft = Nftables::new();
+
+        // Overwrite rules file with new content
+        let updated_rules = r#"
+        [nat.whitelist]
+        family = "ip"
+        type = "ipv4"
+        domains = ["test1.example.com", "test2.example.com"]
+
+        [filter.block]
+        family = "ip6"
+        domains = ["block.example.com"]
+        "#;
+        std::fs::write(&test_file, updated_rules).unwrap();
+
+        // Perform reload
+        reload_rules_and_sync(
+            test_file.to_str().unwrap(),
+            &shared_ruleset,
+            &state,
+            &mut nft,
+        )
+        .unwrap();
+
+        assert_eq!(shared_ruleset.read().unwrap().len(), 3);
+        assert_eq!(
+            shared_ruleset
+                .read()
+                .unwrap()
+                .match_all("block.example.com")
+                .len(),
+            1
+        );
+
+        // Now write invalid TOML and check that reload fails gracefully without changing shared_ruleset
+        std::fs::write(&test_file, "this is invalid toml [[[ }").unwrap();
+        let res = reload_rules_and_sync(
+            test_file.to_str().unwrap(),
+            &shared_ruleset,
+            &state,
+            &mut nft,
+        );
+        assert!(res.is_err());
+        // Ruleset should remain unchanged at 3 rules
+        assert_eq!(shared_ruleset.read().unwrap().len(), 3);
+
+        // Clean up
+        let _ = std::fs::remove_file(&test_file);
     }
 }

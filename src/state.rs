@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use compact_str::CompactString;
 use log::{info, warn};
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
@@ -124,12 +124,13 @@ impl SetState {
         cache.entry(key).or_default().insert(addr, expires_at);
     }
 
-    /// Load parsed elements for a set (e.g. from startup sync).
+    /// Load parsed elements for a set
     pub fn load_elements(&self, set: &Set, elements: Vec<ParsedNftElement>) {
         let key = SetKey::from(set);
         let now = Instant::now();
         let mut cache = self.cache.write().unwrap();
         let set_cache = cache.entry(key).or_default();
+        set_cache.clear();
         for elem in elements {
             let expires_at = elem.expires.map(|exp| now + exp);
             set_cache.insert(elem.ip, expires_at);
@@ -138,6 +139,15 @@ impl SetState {
 
     /// Sync internal state from nftables for all sets in the ruleset.
     pub fn sync_from_nft(&self, nft: &mut Nftables, ruleset: &RuleSet) {
+        let active_keys: HashSet<SetKey> = ruleset
+            .sets()
+            .iter()
+            .map(|s| SetKey::from(s.as_ref()))
+            .collect();
+        {
+            let mut cache = self.cache.write().unwrap();
+            cache.retain(|k, _| active_keys.contains(k));
+        }
         for set in ruleset.sets() {
             match nft.list_set_json(set.family, &set.table, &set.set_name) {
                 Ok(json_str) => match parse_nft_set_elements(&json_str) {
@@ -291,6 +301,43 @@ mod tests {
         // 6. Expired (0s remaining) -> should Add (cleaned up by kernel)
         state.insert_record(&set, ip, Some(now - Duration::from_secs(10)));
         assert_eq!(state.check_update(&set, &ip), UpdateAction::Add);
+    }
+
+    #[test]
+    fn test_load_elements_replaces_old() {
+        let state = SetState::new();
+        let set = sample_set(None);
+        let ip1: IpAddr = "1.1.1.1".parse().unwrap();
+        let ip2: IpAddr = "2.2.2.2".parse().unwrap();
+
+        state.load_elements(
+            &set,
+            vec![
+                ParsedNftElement {
+                    ip: ip1,
+                    expires: None,
+                },
+                ParsedNftElement {
+                    ip: ip2,
+                    expires: None,
+                },
+            ],
+        );
+        assert!(!state.should_update(&set, &ip1));
+        assert!(!state.should_update(&set, &ip2));
+
+        // Sync again with only ip2 (ip1 was removed or expired in nftables)
+        state.load_elements(
+            &set,
+            vec![ParsedNftElement {
+                ip: ip2,
+                expires: None,
+            }],
+        );
+        // ip1 should now need update since it was removed
+        assert!(state.should_update(&set, &ip1));
+        // ip2 should still be cached
+        assert!(!state.should_update(&set, &ip2));
     }
 
     #[test]
