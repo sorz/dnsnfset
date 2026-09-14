@@ -234,10 +234,10 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "bindgen",
+ "byteorder",
  "clap",
  "compact_str",
  "env_logger",
- "fstrm",
  "fundu",
  "libc",
  "log",
@@ -302,15 +302,6 @@ name = "find-msvc-tools"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d45db016d36b838f563236e9193d0ee6ce38f3f68b6c94e914b4929c96bbb890"
-
-[[package]]
-name = "fstrm"
-version = "0.1.0"
-source = "git+https://github.com/sorz/rust-fstrm/?rev=5416fa0#5416fa061a0c563953b442c965df15cef4888fd9"
-dependencies = [
- "byteorder",
- "log",
-]
 
 [[package]]
 name = "fundu"

@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
-use fstrm::FstrmReader;
 use log::{debug, info, trace, warn};
 use protobuf::prelude::*;
 use sd_notify::NotifyState;
@@ -20,6 +19,7 @@ use std::{
 
 use dnsnfset::{
     dnstap::Dnstap,
+    fstrm::FstrmReader,
     nft::{NftCommand, NftSetElemType},
     nftables::Nftables,
     rule::RuleSet,

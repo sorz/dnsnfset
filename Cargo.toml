@@ -11,8 +11,7 @@ env_logger = "0.11"
 clap = "4"
 mnl = "0.3"
 protobuf = "4.36.1-release"
-fstrm = { git = "https://github.com/sorz/rust-fstrm/", rev = "5416fa0" }
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
 toml = "1"
 anyhow = "1"
 fundu = "2"
@@ -21,6 +20,7 @@ compact_str = { version = "0.10", features = ["serde"] }
 simple-dns = "0.12"
 signal-hook = "0.3"
 sd-notify = "0.5"
+byteorder = "1"
 
 [build-dependencies]
 bindgen = "0.72"
