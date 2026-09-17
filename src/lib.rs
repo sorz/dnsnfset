@@ -1,3 +1,4 @@
+pub mod cli;
 pub mod fstrm;
 pub mod nft;
 pub mod nftables;

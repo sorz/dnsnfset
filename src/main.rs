@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use clap::{Arg, Command};
+use clap::Parser;
 use log::{debug, info, trace, warn};
 use protobuf::prelude::*;
 use sd_notify::NotifyState;
@@ -8,16 +8,15 @@ use simple_dns::{rdata::RData, Packet as DnsPacket, QTYPE, TYPE};
 use std::{
     io::{self, Read},
     net::IpAddr,
-    os::unix::{
-        io::FromRawFd,
-        net::{UnixListener, UnixStream},
-    },
+    os::unix::net::UnixStream,
+    path::Path,
     sync::{Arc, RwLock},
     thread,
     time::Instant,
 };
 
 use dnsnfset::{
+    cli::Cli,
     dnstap::Dnstap,
     fstrm::FstrmReader,
     nft::{NftCommand, NftSetElemType},
@@ -160,15 +159,16 @@ fn handle_packet(pkt: DnsPacket, ruleset: &RuleSet, state: &SetState, nft: &mut 
     }
 }
 
-fn reload_rules_and_sync(
-    rules_path: &str,
+fn reload_rules_and_sync<P: AsRef<Path>>(
+    rules_path: P,
     ruleset: &RwLock<Arc<RuleSet>>,
     state: &SetState,
     nft: &mut Nftables,
 ) -> Result<()> {
+    let rules_path = rules_path.as_ref();
     let new_ruleset = RuleSet::from_file(rules_path)
-        .with_context(|| format!("fail to load rules from {}", rules_path))?;
-    info!("{} rules loaded from {}", new_ruleset.len(), rules_path);
+        .with_context(|| format!("fail to load rules from {}", rules_path.display()))?;
+    info!("{} rules loaded from {}", new_ruleset.len(), rules_path.display());
     info!("syncing existing set elements from nftables...");
     state.sync_from_nft(nft, &new_ruleset);
     *ruleset.write().unwrap() = Arc::new(new_ruleset);
@@ -176,52 +176,13 @@ fn reload_rules_and_sync(
     Ok(())
 }
 
-fn get_listener(socks_path: &mut AutoRemoveFile) -> Result<UnixListener> {
-    let mut fds = sd_notify::listen_fds().context("failed to check systemd listen fds")?;
-    if let Some(fd) = fds.next() {
-        info!("using systemd socket activation (fd {})", fd);
-        // Safety: fds provided by systemd are always owned & opened.
-        Ok(unsafe { UnixListener::from_raw_fd(fd) })
-    } else {
-        let listener = UnixListener::bind(socks_path.as_ref())
-            .with_context(|| format!("fail to bind socket on {}", socks_path))?;
-        info!("listen on {}", socks_path);
-        socks_path.set_auto_remove(true);
-        Ok(listener)
-    }
-}
-
 fn main() -> Result<()> {
     env_logger::builder().format_timestamp(None).init();
-    let matches = Command::new("dnsnfset")
-        .version(env!("CARGO_PKG_VERSION"))
-        .author("Shell Chen <me@sorz.org>")
-        .about("Add IPs in DNS response to nftables sets")
-        .arg(
-            Arg::new("socks-path")
-                .long("socks-path")
-                .short('s')
-                .help("UNIX domain socket to bind on")
-                .default_value("/var/run/dnsnfset/dnstap.sock"),
-        )
-        .arg(
-            Arg::new("rules")
-                .long("rules")
-                .short('f')
-                .help("Rules file")
-                .default_value("rules.toml"),
-        )
-        .get_matches();
-    let socks_path = matches
-        .get_one::<String>("socks-path")
-        .expect("missing socks-path argument");
-    let mut socks_path: AutoRemoveFile = socks_path.as_str().into();
+    let cli = Cli::parse();
+    let mut socks_path: AutoRemoveFile = (&cli.socks_path).into();
 
-    let rules_file = matches
-        .get_one::<String>("rules")
-        .expect("missing rules file path");
-    let ruleset = RuleSet::from_file(rules_file)
-        .with_context(|| format!("fail to load rules from {}", rules_file))?;
+    let ruleset = RuleSet::from_file(&cli.rules)
+        .with_context(|| format!("fail to load rules from {}", cli.rules.display()))?;
     let ruleset = Arc::new(RwLock::new(Arc::new(ruleset)));
     info!("{} rules loaded", ruleset.read().unwrap().len());
 
@@ -233,7 +194,7 @@ fn main() -> Result<()> {
     let mut signals = Signals::new([SIGHUP]).context("failed to register SIGHUP signal handler")?;
     let signal_ruleset = ruleset.clone();
     let signal_state = state.clone();
-    let signal_rules_path = rules_file.clone();
+    let signal_rules_path = cli.rules.clone();
     thread::spawn(move || {
         let mut nft = Nftables::new();
         for sig in signals.forever() {
@@ -261,7 +222,7 @@ fn main() -> Result<()> {
         }
     });
 
-    let listener = get_listener(&mut socks_path)?;
+    let listener = cli.get_listener(&mut socks_path)?;
 
     if let Err(err) = sd_notify::notify(&[NotifyState::Ready]) {
         debug!("failed to notify systemd: {:#}", err);
@@ -427,49 +388,5 @@ mod tests {
         // Clean up
         let _ = std::fs::remove_file(&test_file);
     }
-
-    #[test]
-    fn test_get_listener_fallback_to_bind() {
-        let temp_dir = std::env::temp_dir();
-        let sock_path = temp_dir.join(format!(
-            "dnsnfset-test-sock-{}-{}.sock",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let mut auto_remove_sock: AutoRemoveFile = sock_path.to_str().unwrap().into();
-
-        let listener = get_listener(&mut auto_remove_sock).unwrap();
-        assert!(sock_path.exists());
-        drop(listener);
-        drop(auto_remove_sock);
-        assert!(!sock_path.exists());
-    }
-
-    #[test]
-    fn test_listener_from_raw_fd() {
-        use std::os::unix::io::IntoRawFd;
-
-        let temp_dir = std::env::temp_dir();
-        let sock_path = temp_dir.join(format!(
-            "dnsnfset-test-rawfd-{}-{}.sock",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let original = UnixListener::bind(&sock_path).unwrap();
-        let raw = original.into_raw_fd();
-        let listener = unsafe { UnixListener::from_raw_fd(raw) };
-
-        let client = UnixStream::connect(&sock_path).unwrap();
-        let (server, _) = listener.accept().unwrap();
-        drop(client);
-        drop(server);
-        drop(listener);
-        let _ = std::fs::remove_file(&sock_path);
-    }
 }
+

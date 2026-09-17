@@ -8,7 +8,7 @@ edition = "2021"
 libc = "0.2"
 log = "0.4"
 env_logger = "0.11"
-clap = "4"
+clap = { version = "4", features = ["derive"] }
 mnl = "0.3"
 protobuf = "4.36.1-release"
 serde = { version = "1", features = ["derive"] }

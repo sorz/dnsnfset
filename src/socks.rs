@@ -1,9 +1,13 @@
 use log::warn;
-use std::{fmt, fs::remove_file, path::Path};
+use std::{
+    fmt,
+    fs::remove_file,
+    path::{Path, PathBuf},
+};
 
 /// File on this path will be removed on `drop()`.
 pub struct AutoRemoveFile<'a> {
-    path: &'a str,
+    path: &'a Path,
     auto_remove: bool,
 }
 
@@ -13,10 +17,28 @@ impl AutoRemoveFile<'_> {
     }
 }
 
+impl<'a> From<&'a Path> for AutoRemoveFile<'a> {
+    fn from(path: &'a Path) -> Self {
+        AutoRemoveFile {
+            path,
+            auto_remove: false,
+        }
+    }
+}
+
+impl<'a> From<&'a PathBuf> for AutoRemoveFile<'a> {
+    fn from(path: &'a PathBuf) -> Self {
+        AutoRemoveFile {
+            path: path.as_path(),
+            auto_remove: false,
+        }
+    }
+}
+
 impl<'a> From<&'a str> for AutoRemoveFile<'a> {
     fn from(path: &'a str) -> Self {
         AutoRemoveFile {
-            path,
+            path: Path::new(path),
             auto_remove: false,
         }
     }
@@ -26,7 +48,7 @@ impl<'a> Drop for AutoRemoveFile<'a> {
     fn drop(&mut self) {
         if self.auto_remove {
             if let Err(err) = remove_file(self.path) {
-                warn!("fail to remove {}: {}", self.path, err);
+                warn!("fail to remove {}: {}", self.path.display(), err);
             }
         }
     }
@@ -34,12 +56,12 @@ impl<'a> Drop for AutoRemoveFile<'a> {
 
 impl AsRef<Path> for AutoRemoveFile<'_> {
     fn as_ref(&self) -> &Path {
-        self.path.as_ref()
+        self.path
     }
 }
 
 impl fmt::Display for AutoRemoveFile<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.path)
+        write!(f, "{}", self.path.display())
     }
 }
