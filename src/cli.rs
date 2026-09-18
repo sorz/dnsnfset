@@ -74,14 +74,9 @@ mod tests {
 
     #[test]
     fn test_cli_custom_short_flags() {
-        let cli = Cli::try_parse_from([
-            "dnsnfset",
-            "-s",
-            "/tmp/test.sock",
-            "-f",
-            "/etc/rules.toml",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["dnsnfset", "-s", "/tmp/test.sock", "-f", "/etc/rules.toml"])
+                .unwrap();
         assert_eq!(cli.socks_path, PathBuf::from("/tmp/test.sock"));
         assert_eq!(cli.rules, PathBuf::from("/etc/rules.toml"));
     }
