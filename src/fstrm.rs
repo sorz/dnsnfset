@@ -183,9 +183,9 @@ impl<R: Read, S> FstrmReader<R, S> {
         } else {
             let size = self.next_length()?;
             if size > CONTROL_FRAME_LENGTH_MAX {
-                Err(io::Error::new(ErrorKind::Other, "control frame too large"))
+                Err(io::Error::other("control frame too large"))
             } else if size < 4 {
-                Err(io::Error::new(ErrorKind::Other, "control frame too small"))
+                Err(io::Error::other("control frame too small"))
             } else {
                 let typ = self.reader.read_u32::<BigEndian>()?.into();
                 trace!("control frame {:?} ({} bytes)", typ, size);
@@ -252,7 +252,10 @@ impl<R: Read> FstrmReader<R, states::Started> {
     pub fn read_frame(&mut self) -> Result<Option<DataFrame<'_, R>>> {
         match self.read_frame_header()? {
             FrameHeader::Data { size } => Ok(Some(DataFrame::new(&mut self.reader, size))),
-            FrameHeader::Control { typ, .. } if typ == ControlType::Stop => Ok(None),
+            FrameHeader::Control {
+                typ: ControlType::Stop,
+                ..
+            } => Ok(None),
             FrameHeader::Control { typ, .. } => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!("unexpected control frame {:?}", typ),
@@ -304,7 +307,7 @@ impl<'a, R> DataFrame<'a, R> {
     fn new(reader: &'a mut R, size: usize) -> Self {
         Self {
             reader,
-            size: size.try_into().unwrap(),
+            size,
             pos: 0,
         }
     }
