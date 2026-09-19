@@ -3,7 +3,7 @@ use compact_str::ToCompactString;
 use log::{debug, info, trace, warn};
 use protobuf::prelude::*;
 use simple_dns::{rdata::RData, Packet as DnsPacket, QTYPE, TYPE};
-use smallvec::SmallVec;
+use smallvec::{smallvec, SmallVec};
 use std::{
     cell::RefCell,
     io::Read,
@@ -101,9 +101,16 @@ impl Worker {
             Some(q) => q.qname.to_compact_string(),
             None => return,
         };
-        trace!("name {:?}", name);
 
-        let sets = self.ruleset.read().unwrap().match_all(&name);
+        let mut names: SmallVec<[_; 3]> = smallvec![name.clone()];
+        for answer in &pkt.answers {
+            if let RData::CNAME(ref name) = answer.rdata {
+                names.push(name.to_compact_string());
+            }
+        }
+        trace!("names {:?}", names);
+
+        let sets = self.ruleset.read().unwrap().match_all(&names);
         if sets.is_empty() {
             return;
         }
@@ -293,7 +300,7 @@ mod tests {
                 .ruleset
                 .read()
                 .unwrap()
-                .match_all("block.example.com")
+                .match_all(["block.example.com"])
                 .len(),
             1
         );

@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
 use compact_str::CompactString;
+use smallvec::SmallVec;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Read;
@@ -143,24 +144,29 @@ impl RuleSet {
         &self.sets
     }
 
-    pub fn match_all(&self, domain: &str) -> Vec<Arc<Set>> {
-        let domain = domain.to_ascii_lowercase();
-        let domain = domain.strip_suffix('.').unwrap_or(&domain);
-
-        let mut matched_set = Vec::new();
+    pub fn match_all<S: AsRef<str>>(
+        &self,
+        domains: impl IntoIterator<Item = S>,
+    ) -> SmallVec<[Arc<Set>; 2]> {
+        let mut matched_set = SmallVec::new();
         let mut match_add = |suffix: &str| {
             if let Some(sets) = self.rules.get(suffix) {
                 matched_set.extend(sets.iter().cloned());
             }
         };
 
-        match_add("");
-        for (n, b) in domain.bytes().enumerate().rev() {
-            if b == b'.' {
-                match_add(&domain[n + 1..]);
+        for domain in domains {
+            let domain = domain.as_ref().to_ascii_lowercase();
+            let domain = domain.strip_suffix('.').unwrap_or(&domain);
+
+            match_add("");
+            for (n, b) in domain.bytes().enumerate().rev() {
+                if b == b'.' {
+                    match_add(&domain[n + 1..]);
+                }
             }
+            match_add(domain);
         }
-        match_add(domain);
         matched_set
     }
 
@@ -207,10 +213,10 @@ mod tests {
         "#;
         let ruleset = RuleSet::from_str(toml_data).unwrap();
         assert_eq!(6, ruleset.len());
-        assert_eq!(1, ruleset.match_all("others").len());
-        assert_eq!(3, ruleset.match_all("com").len());
-        assert_eq!(3, ruleset.match_all("one.com").len());
-        assert_eq!(4, ruleset.match_all("a.b.example.com").len());
+        assert_eq!(1, ruleset.match_all(["others"]).len());
+        assert_eq!(3, ruleset.match_all(["com"]).len());
+        assert_eq!(3, ruleset.match_all(["one.com"]).len());
+        assert_eq!(4, ruleset.match_all(["a.b.example.com"]).len());
     }
 
     #[test]
@@ -235,14 +241,14 @@ mod tests {
         let ruleset = RuleSet::from_str(toml_data).unwrap();
         assert_eq!(3, ruleset.len());
 
-        let yt_matches = ruleset.match_all("youtube.com");
+        let yt_matches = ruleset.match_all(["youtube.com"]);
         assert_eq!(1, yt_matches.len());
         assert_eq!("filter", &*yt_matches[0].table);
         assert_eq!("proxy", &*yt_matches[0].set_name);
         assert_eq!(Some(NftFamily::Inet), yt_matches[0].family);
         assert_eq!(NftSetElemType::Ipv4Addr, yt_matches[0].elem_type);
 
-        let nf_matches = ruleset.match_all("app.netflix.com");
+        let nf_matches = ruleset.match_all(["app.netflix.com"]);
         assert_eq!(1, nf_matches.len());
         assert_eq!("netflix", &*nf_matches[0].set_name);
         assert_eq!(Some(NftFamily::Ip6), nf_matches[0].family);
@@ -265,15 +271,15 @@ mod tests {
         domains = ["no-family.example.com"]
         "#;
         let ruleset = RuleSet::from_str(toml_data).unwrap();
-        let v4_matches = ruleset.match_all("ipv4.example.com");
+        let v4_matches = ruleset.match_all(["ipv4.example.com"]);
         assert_eq!(1, v4_matches.len());
         assert_eq!(NftSetElemType::Ipv4Addr, v4_matches[0].elem_type);
 
-        let v6_matches = ruleset.match_all("ipv6.example.com");
+        let v6_matches = ruleset.match_all(["ipv6.example.com"]);
         assert_eq!(1, v6_matches.len());
         assert_eq!(NftSetElemType::Ipv6Addr, v6_matches[0].elem_type);
 
-        let no_family_matches = ruleset.match_all("no-family.example.com");
+        let no_family_matches = ruleset.match_all(["no-family.example.com"]);
         assert_eq!(1, no_family_matches.len());
         assert_eq!(None, no_family_matches[0].family);
         assert_eq!(NftSetElemType::Ipv4Addr, no_family_matches[0].elem_type);
@@ -334,16 +340,16 @@ mod tests {
         domains = ["none.com"]
         "#;
         let ruleset = RuleSet::from_str(toml_data).unwrap();
-        let m_1d = ruleset.match_all("d.com");
+        let m_1d = ruleset.match_all(["d.com"]);
         assert_eq!(m_1d[0].timeout, Some(Duration::from_secs(86400)));
 
-        let m_2h = ruleset.match_all("h.com");
+        let m_2h = ruleset.match_all(["h.com"]);
         assert_eq!(m_2h[0].timeout, Some(Duration::from_secs(7200)));
 
-        let m_s1 = ruleset.match_all("s1.com");
+        let m_s1 = ruleset.match_all(["s1.com"]);
         assert_eq!(m_s1[0].timeout, Some(Duration::from_secs(3600)));
 
-        let m_none = ruleset.match_all("none.com");
+        let m_none = ruleset.match_all(["none.com"]);
         assert_eq!(m_none[0].timeout, None);
     }
 
@@ -356,5 +362,38 @@ mod tests {
         domains = ["bad.com"]
         "#;
         assert!(RuleSet::from_str(toml_invalid).is_err());
+    }
+
+    #[test]
+    fn test_multiple_domains() {
+        let toml_data = r#"
+        [nat.google]
+        family = "ip"
+        type = "ipv4"
+        domains = ["google.com"]
+
+        [nat.netflix]
+        family = "ip"
+        type = "ipv4"
+        domains = ["netflix.com"]
+        "#;
+        let ruleset = RuleSet::from_str(toml_data).unwrap();
+
+        // Empty list returns no matches
+        assert_eq!(0, ruleset.match_all([] as [&str; 0]).len());
+
+        // Single domain
+        assert_eq!(1, ruleset.match_all(["google.com"]).len());
+
+        // Multiple domains
+        let matches = ruleset.match_all(["mail.google.com", "api.netflix.com."]);
+        assert_eq!(2, matches.len());
+        let set_names: HashSet<_> = matches.iter().map(|s| s.set_name.as_str()).collect();
+        assert!(set_names.contains("google"));
+        assert!(set_names.contains("netflix"));
+
+        // Passing a slice or SmallVec
+        let names: SmallVec<[&str; 2]> = smallvec::smallvec!["google.com", "other.org"];
+        assert_eq!(1, ruleset.match_all(&names).len());
     }
 }
