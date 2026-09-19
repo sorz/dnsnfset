@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
+use compact_str::ToCompactString;
 use log::{debug, info, trace, warn};
 use protobuf::prelude::*;
 use simple_dns::{rdata::RData, Packet as DnsPacket, QTYPE, TYPE};
+use smallvec::SmallVec;
 use std::{
     cell::RefCell,
     io::Read,
@@ -91,96 +93,89 @@ impl Worker {
     }
 
     fn handle_packet(&self, pkt: DnsPacket) {
-        let qtype_qname = pkt
+        let name = match pkt
             .questions
             .iter()
             .find(|q| matches!(q.qtype, QTYPE::TYPE(TYPE::A | TYPE::AAAA)))
-            .map(|q| (q.qtype, q.qname.to_string()));
-        trace!("name {:?}", qtype_qname);
+        {
+            Some(q) => q.qname.to_compact_string(),
+            None => return,
+        };
+        trace!("name {:?}", name);
 
-        if let Some((qtype, name)) = qtype_qname {
-            let sets = self.ruleset.read().unwrap().match_all(&name);
-            if sets.is_empty() {
-                return;
-            }
-            let records: Vec<_> = pkt
-                .answers
-                .iter()
-                .filter_map(|record| match &record.rdata {
-                    RData::A(addr) => Some(IpAddr::V4(addr.address.into())),
-                    RData::AAAA(addr) => Some(IpAddr::V6(addr.address.into())),
-                    _ => None,
-                })
-                .collect();
-
-            let mut cmd = String::new();
-            let mut to_record = Vec::new();
-
-            for set in sets {
-                for addr in records.iter() {
-                    match (set.elem_type, addr) {
-                        (NftSetElemType::Ipv4Addr, IpAddr::V6(_))
-                        | (NftSetElemType::Ipv6Addr, IpAddr::V4(_)) => (),
-                        _ => match self.state.check_update(&set, addr) {
-                            UpdateAction::Add => {
-                                debug!("  add {} {:?} to {}", name, addr, set.set_name);
-                                cmd.add_element(
-                                    set.family,
-                                    &set.table,
-                                    &set.set_name,
-                                    addr,
-                                    set.timeout,
-                                );
-                                to_record.push((set.clone(), *addr));
-                            }
-                            UpdateAction::Refresh => {
-                                debug!("  refresh {} {:?} in {}", name, addr, set.set_name);
-                                cmd.refresh_element(
-                                    set.family,
-                                    &set.table,
-                                    &set.set_name,
-                                    addr,
-                                    set.timeout,
-                                );
-                                to_record.push((set.clone(), *addr));
-                            }
-                            UpdateAction::Skip => {
-                                trace!(
-                                    "  skip {} {:?} in {} (lifetime > 2/3)",
-                                    name,
-                                    addr,
-                                    set.set_name
-                                );
-                            }
-                        },
-                    }
-                }
-            }
-            if cmd.is_empty() {
-                debug!("match {} with zero {:?} record to update", name, qtype);
-                return;
-            }
-            info!(
-                "match {} with {} {:?} record(s) ({} to add)",
-                name,
-                records.len(),
-                qtype,
-                to_record.len(),
-            );
-            trace!("{}", cmd);
-            let t = Instant::now();
-            NFT.with(|nft| match nft.borrow_mut().run(cmd) {
-                Ok(()) => {
-                    for (set, addr) in to_record {
-                        self.state.record_added(&set, addr);
-                    }
-                }
-                Err(err) => {
-                    warn!("fail to run nft cmd: {:#}", err);
-                }
-            });
-            debug!("{:?}", t.elapsed());
+        let sets = self.ruleset.read().unwrap().match_all(&name);
+        if sets.is_empty() {
+            return;
         }
+        let records: SmallVec<[_; 4]> = pkt
+            .answers
+            .iter()
+            .filter_map(|record| match &record.rdata {
+                RData::A(addr) => Some(IpAddr::V4(addr.address.into())),
+                RData::AAAA(addr) => Some(IpAddr::V6(addr.address.into())),
+                _ => None,
+            })
+            .collect();
+
+        let mut cmd = String::new();
+        let mut to_record = SmallVec::<[_; 2]>::new();
+
+        for set in sets {
+            for addr in records.iter() {
+                match (set.elem_type, addr) {
+                    (NftSetElemType::Ipv4Addr, IpAddr::V6(_))
+                    | (NftSetElemType::Ipv6Addr, IpAddr::V4(_)) => (),
+                    _ => match self.state.check_update(&set, addr) {
+                        UpdateAction::Add => {
+                            debug!("  add {} {:?} to {}", name, addr, set.set_name);
+                            cmd.add_element(
+                                set.family,
+                                &set.table,
+                                &set.set_name,
+                                addr,
+                                set.timeout,
+                            );
+                            to_record.push((set.clone(), *addr));
+                        }
+                        UpdateAction::Refresh => {
+                            debug!("  refresh {} {:?} in {}", name, addr, set.set_name);
+                            cmd.refresh_element(
+                                set.family,
+                                &set.table,
+                                &set.set_name,
+                                addr,
+                                set.timeout,
+                            );
+                            to_record.push((set.clone(), *addr));
+                        }
+                        UpdateAction::Skip => (),
+                    },
+                }
+            }
+        }
+        if cmd.is_empty() {
+            debug!("match {} with zero record to update", name);
+            return;
+        }
+        info!(
+            "match {} with {} record(s) ({} to add)",
+            name,
+            records.len(),
+            to_record.len(),
+        );
+        trace!("{}", cmd);
+        let t = Instant::now();
+        NFT.with(|nft| match nft.borrow_mut().run(cmd) {
+            Ok(()) => {
+                for (set, addr) in to_record {
+                    self.state.record_added(&set, addr);
+                }
+            }
+            Err(err) => {
+                warn!("fail to run nft cmd: {:#}", err);
+            }
+        });
+        debug!("{:?}", t.elapsed());
     }
 }
 

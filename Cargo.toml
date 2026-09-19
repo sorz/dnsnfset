@@ -21,6 +21,7 @@ simple-dns = "0.12"
 signal-hook = "0.3"
 sd-notify = "0.5"
 byteorder = "1"
+smallvec = { version = "1", features = ["union"] }
 
 [build-dependencies]
 bindgen = "0.72"

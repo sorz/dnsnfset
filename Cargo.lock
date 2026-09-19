@@ -262,6 +262,7 @@ dependencies = [
  "serde_json",
  "signal-hook",
  "simple-dns",
+ "smallvec",
  "toml",
 ]
 
@@ -741,6 +742,12 @@ checksum = "2b6f884fa9a8d48101774bfbd3aeb81e968dd22cffd19a372da69f183db22c1a"
 dependencies = [
  "bitflags 2.13.1",
 ]
+
+[[package]]
+name = "smallvec"
+version = "1.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba467056f1b547ed52077911161fc86985becbc60e8e1857c8a144dab0def891"
 
 [[package]]
 name = "static_assertions"
