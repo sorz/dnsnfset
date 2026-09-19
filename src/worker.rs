@@ -167,15 +167,11 @@ impl Worker {
         let t = Instant::now();
         NFT.with(|nft| match nft.borrow_mut().run(cmd) {
             Ok(()) => {
-                for (set, addr) in to_record {
-                    self.state.record_added(&set, addr);
-                }
+                debug!("{:?}", t.elapsed());
+                self.state.records_added(to_record);
             }
-            Err(err) => {
-                warn!("fail to run nft cmd: {:#}", err);
-            }
+            Err(err) => warn!("fail to run nft cmd: {:#}", err),
         });
-        debug!("{:?}", t.elapsed());
     }
 }
 

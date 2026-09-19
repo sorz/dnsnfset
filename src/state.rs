@@ -109,12 +109,19 @@ impl SetState {
         self.check_update(set, addr) != UpdateAction::Skip
     }
 
-    /// Record an element that was added or refreshed in nftables.
-    pub fn record_added(&self, set: &Set, addr: IpAddr) {
-        let key = SetKey::from(set);
-        let expires_at = set.timeout.map(|t| Instant::now() + t);
+    /// Record elements that were added or refreshed in nftables.
+    pub fn records_added<I, S>(&self, records: I)
+    where
+        I: IntoIterator<Item = (S, IpAddr)>,
+        S: std::ops::Deref<Target = Set>,
+    {
+        let now = Instant::now();
         let mut cache = self.cache.write().unwrap();
-        cache.entry(key).or_default().insert(addr, expires_at);
+        for (set, addr) in records {
+            let key = SetKey::from(&*set);
+            let expires_at = set.timeout.map(|t| now + t);
+            cache.entry(key).or_default().insert(addr, expires_at);
+        }
     }
 
     /// Insert or update records directly (useful for testing or batch operations).
@@ -265,7 +272,7 @@ mod tests {
         assert!(state.should_update(&set, &ip));
 
         // Add to cache
-        state.record_added(&set, ip);
+        state.records_added([(&set, ip)]);
 
         // Already in cache as permanent -> should NOT update
         assert!(!state.should_update(&set, &ip));
@@ -282,7 +289,7 @@ mod tests {
         assert_eq!(state.check_update(&set, &ip), UpdateAction::Add);
 
         // 2. Just added -> full remaining lifetime (3600s) > 2/3 (2400s) -> should Skip
-        state.record_added(&set, ip);
+        state.records_added([(&set, ip)]);
         assert_eq!(state.check_update(&set, &ip), UpdateAction::Skip);
 
         // 3. Set remaining lifetime to 2500s (> 2/3 * 3600 = 2400s) -> should Skip
@@ -393,5 +400,23 @@ mod tests {
 
         assert_eq!(elements[1].ip, "2.2.2.2".parse::<IpAddr>().unwrap());
         assert_eq!(elements[1].expires, Some(Duration::from_secs(1200)));
+    }
+
+    #[test]
+    fn test_records_added_batch() {
+        let state = SetState::new();
+        let set1 = sample_set(None);
+        let mut set2 = sample_set(Some(Duration::from_secs(3600)));
+        set2.set_name = "blacklist".into();
+
+        let ip1: IpAddr = "1.1.1.1".parse().unwrap();
+        let ip2: IpAddr = "2.2.2.2".parse().unwrap();
+        let ip3: IpAddr = "3.3.3.3".parse().unwrap();
+
+        state.records_added([(&set1, ip1), (&set1, ip2), (&set2, ip3)]);
+
+        assert!(!state.should_update(&set1, &ip1));
+        assert!(!state.should_update(&set1, &ip2));
+        assert_eq!(state.check_update(&set2, &ip3), UpdateAction::Skip);
     }
 }
